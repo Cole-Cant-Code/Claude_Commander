@@ -60,13 +60,17 @@ uv sync --extra dev
 export OLLAMA_BASE_URL="http://your-ollama-host:11434"
 ```
 
-### Claude Code
+### Claude Code — primary reasoning agent
+
+Server name: `claude-commander` | Instructions: [`CLAUDE.md`](CLAUDE.md)
+
+Use Commander for external validation, diverse perspectives, and contrarian checks.
 
 ```bash
 claude mcp add claude-commander -- uv run --project /path/to/Claude_Commander fastmcp run claude_commander.server:mcp
 ```
 
-Or add directly to `~/.claude.json`:
+Or add to `~/.claude.json`:
 
 ```json
 {
@@ -80,27 +84,30 @@ Or add directly to `~/.claude.json`:
 }
 ```
 
-Agent instructions: see [`CLAUDE.md`](CLAUDE.md)
+### Codex — execution agent
 
-### Codex
+Server name: `codex-commander` | Instructions: [`AGENTS.md`](AGENTS.md)
+
+Use Commander for cross-validation from non-OpenAI models before committing changes.
 
 Add to `~/.codex/config.toml`:
 
 ```toml
-[mcp_servers.claude-commander]
+[mcp_servers.codex-commander]
 command = "uv"
 args = ["run", "--project", "/path/to/Claude_Commander", "fastmcp", "run", "claude_commander.server:mcp"]
 
-[mcp_servers.claude-commander.env]
+[mcp_servers.codex-commander.env]
+MCP_SERVER_NAME = "Codex Commander"
 OLLAMA_BASE_URL = "http://your-ollama-host:11434"
 ```
 
-Agent instructions: see [`AGENTS.md`](AGENTS.md)
-
 ### Gemini CLI
 
+Server name: `gemini-commander`
+
 ```bash
-gemini mcp add -e OLLAMA_BASE_URL=http://your-ollama-host:11434 claude-commander -- uv run --project /path/to/Claude_Commander fastmcp run claude_commander.server:mcp
+gemini mcp add -e OLLAMA_BASE_URL=http://your-ollama-host:11434 gemini-commander -- uv run --project /path/to/Claude_Commander fastmcp run claude_commander.server:mcp
 ```
 
 Or add to `~/.gemini/settings.json`:
@@ -108,7 +115,7 @@ Or add to `~/.gemini/settings.json`:
 ```json
 {
   "mcpServers": {
-    "claude-commander": {
+    "gemini-commander": {
       "command": "uv",
       "args": ["run", "--project", "/path/to/Claude_Commander", "fastmcp", "run", "claude_commander.server:mcp"],
       "env": { "OLLAMA_BASE_URL": "http://your-ollama-host:11434" }
@@ -119,12 +126,14 @@ Or add to `~/.gemini/settings.json`:
 
 ### Kimi CLI
 
+Server name: `kimi-commander`
+
 Add to `~/.kimi/mcp.json`:
 
 ```json
 {
   "mcpServers": {
-    "claude-commander": {
+    "kimi-commander": {
       "command": "uv",
       "args": ["run", "--project", "/path/to/Claude_Commander", "fastmcp", "run", "claude_commander.server:mcp"],
       "env": { "OLLAMA_BASE_URL": "http://your-ollama-host:11434" }

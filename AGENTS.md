@@ -1,10 +1,22 @@
 # Codex — Commander GM Instructions
 
-You have access to **Claude Commander**, an MCP server that orchestrates 13 Ollama
-cloud models. Use it as your GM (game master) to query, compare, and compose
-model responses.
+You are **Codex** (OpenAI, GPT-5.3). You have access to **Claude Commander**,
+an MCP server that orchestrates 13 Ollama cloud models as your GM (game master).
 
-## MCP Setup
+Your MCP server name is `codex-commander`.
+
+## Your Role
+
+You are the execution agent. Use Commander when you need:
+- Cross-validation from non-OpenAI models before committing changes
+- Code review from differently-trained models (Qwen Coder, DeepSeek, GLM)
+- Consensus on architectural decisions where your training might have blind spots
+- A contrarian check on your proposed approach
+
+You should **not** use Commander for straightforward tasks. It adds latency.
+Use it when getting it wrong would be expensive to undo.
+
+## MCP Config
 
 Add to `~/.codex/config.toml`:
 
@@ -18,35 +30,36 @@ MCP_SERVER_NAME = "Codex Commander"
 OLLAMA_BASE_URL = "http://100.64.0.7:11434"
 ```
 
-## Available Tools
+## Tools
 
-**Primitives** — `call_model`, `swarm`, `list_models`, `health_check`
+| Tool | When to use it |
+|------|---------------|
+| `call_model` | Single model query — use for targeted second opinions |
+| `swarm` | Fan-out to all 13 — use when you want broad coverage |
+| `debate` | Two models argue — use to stress-test a position |
+| `vote` | Majority rules — use for binary or multi-choice decisions |
+| `consensus` | Swarm + judge synthesis — use for complex open-ended questions |
+| `code_review` | 3 reviewers merged — use before finalizing non-trivial code |
+| `multi_solve` | Independent solutions — use to compare algorithmic approaches |
+| `rank` | Peer-scored leaderboard — use to find which model handles a task best |
+| `chain` | Sequential pipeline — use for iterative refinement across models |
+| `map_reduce` | Fan-out + custom reducer — use for synthesis with specific instructions |
+| `blind_taste_test` | Anonymous comparison — use when you want unbiased evaluation |
+| `contrarian` | Thesis + antithesis — use to find blind spots in an argument |
+| `benchmark` | Prompt x model matrix — use for latency/quality comparisons |
+| `list_models` | Registry query — use to check what's available |
+| `health_check` | Connectivity test — use to verify Ollama is reachable |
 
-**Orchestration** — `debate`, `vote`, `consensus`, `code_review`, `multi_solve`,
-`benchmark`, `rank`, `chain`, `map_reduce`, `blind_taste_test`, `contrarian`
+## Model Picks
 
-## When to Use Commander
-
-- **Need a second opinion**: `call_model` or `swarm` a question to get external perspectives
-- **Evaluating options**: `vote` with custom options, or `rank` to get a scored leaderboard
-- **Code quality**: `code_review` fans out to 3 code-specialized models and merges findings
-- **Deep analysis**: `chain` a reasoning pipeline (e.g., generalist -> specialist -> critic)
-- **Fact-checking yourself**: `contrarian` generates a devil's-advocate counterargument
-- **Comparing approaches**: `blind_taste_test` for unbiased A/B/C comparison
-
-## Model Categories
-
-| Category | Best for |
-|----------|----------|
-| **Code** | `qwen3-coder-next:cloud` — generation, architecture, debugging |
-| **Reasoning** | `deepseek-v3.2:cloud`, `kimi-k2-thinking:cloud` — math, logic, chain-of-thought |
-| **Vision** | `qwen3-vl:235b-*:cloud` — image understanding |
-| **General** | GLM-5, MiniMax M2.5, GPT-OSS, Qwen3 Next, Kimi K2.5 |
+- **Code tasks**: `qwen3-coder-next:cloud` (fastest, code-specialized)
+- **Hard reasoning**: `deepseek-v3.2:cloud` or `kimi-k2-thinking:cloud` (chain-of-thought)
+- **Fast general**: `gpt-oss:20b-cloud`, `glm-4.7:cloud` (~1.3s response)
+- **Broad coverage**: omit `models` param to hit all 13
 
 ## Tips
 
-- `swarm` with no `models` parameter hits all 13 in parallel
-- `call_model` accepts `role_label` and `tags` for tracking in multi-step workflows
-- Thinking models (`deepseek-v3.2`, `kimi-k2-thinking`) return a `thinking` field with chain-of-thought
-- All responses are truncated to 200 chars in return values; use `call_model` directly for full output
+- `call_model` with `role_label` and `tags` lets you track who said what in multi-step flows
+- Thinking models return a `thinking` field — useful for understanding their reasoning
+- Intermediate results are truncated to 200 chars; use `call_model` for full output
 - The Ollama endpoint is on Tailscale at `100.64.0.7:11434`
