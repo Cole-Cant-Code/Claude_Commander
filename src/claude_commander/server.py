@@ -1,12 +1,14 @@
-"""Claude Commander MCP server — 15 tools for Ollama model orchestration."""
+"""Claude Commander MCP server — model orchestration tools for Ollama."""
 
 from __future__ import annotations
 
 import asyncio
 import hashlib
+import os
 import random
 import re
 import time
+from typing import Any
 
 from fastmcp import FastMCP
 
@@ -29,15 +31,22 @@ from claude_commander.models import (
     ModelAvailability,
     ModelScore,
     MultiSolveResult,
+    PipelineResult,
+    PipelineStepResult,
+    ProfileData,
+    ProfileListResult,
     RankResult,
     SwarmResult,
     Vote,
     VoteResult,
 )
 from claude_commander.ollama import OLLAMA_BASE_URL, call_ollama, check_ollama
+from claude_commander.profile_store import get_profile_store
 from claude_commander.registry import MODELS, get_model
 
-mcp = FastMCP("Claude Commander")
+# Keep the historical name by default, but allow config-level aliases (e.g. "GM Commander")
+# without changing existing Claude configs.
+mcp = FastMCP(os.getenv("MCP_SERVER_NAME", "Claude Commander"))
 
 MAX_CONCURRENCY = 13
 
@@ -61,47 +70,38 @@ RANK_DEFAULT_MODELS = [
 # Helper functions
 # ---------------------------------------------------------------------------
 
-
-TRUNCATE_LEN = 200  # max chars for intermediate responses returned to caller
+TRUNCATE_LEN = 200
 
 
 def _truncate(text: str, limit: int = TRUNCATE_LEN) -> str:
-    """Truncate text for return values. Keeps full text for internal processing."""
     if len(text) <= limit:
         return text
     return text[:limit] + "..."
 
 
 def _truncate_result(r: CallResult, limit: int = TRUNCATE_LEN) -> CallResult:
-    """Return a copy of CallResult with truncated content."""
     return CallResult(
         model=r.model,
         content=_truncate(r.content, limit),
+        thinking=r.thinking[:limit] + "..." if r.thinking and len(r.thinking) > limit else r.thinking,
         elapsed_seconds=r.elapsed_seconds,
         status=r.status,
         error=r.error,
+        role_label=r.role_label,
+        tags=r.tags,
+        warnings=r.warnings,
     )
 
 
 def _extract_vote(response: str, options: list[str]) -> tuple[str, str]:
-    """Parse a model response to extract a vote from the given options.
-
-    Strategy cascade:
-    1. First-word exact match (case-insensitive)
-    2. Phrase patterns like "I vote X", "my answer is X", "I choose X"
-    3. Occurrence counting — pick the option mentioned most
-    4. Fallback: "abstain" with low confidence
-    """
     lower = response.lower().strip()
     options_lower = [o.lower() for o in options]
 
-    # Strategy 1: first word match (strip trailing punctuation)
     first_word = re.sub(r"[^a-z0-9]", "", lower.split()[0]) if lower else ""
     for i, opt in enumerate(options_lower):
         if first_word == opt:
             return options[i], "high"
 
-    # Strategy 2: phrase patterns
     for i, opt in enumerate(options_lower):
         patterns = [
             rf"\bi vote {re.escape(opt)}\b",
@@ -114,68 +114,42 @@ def _extract_vote(response: str, options: list[str]) -> tuple[str, str]:
             if re.search(pat, lower):
                 return options[i], "medium"
 
-    # Strategy 3: occurrence counting
     counts = []
     for i, opt in enumerate(options_lower):
         counts.append((lower.count(opt), i))
     counts.sort(key=lambda x: x[0], reverse=True)
     if counts and counts[0][0] > 0:
-        # Only use if there's a clear winner
         if len(counts) == 1 or counts[0][0] > counts[1][0]:
             return options[counts[0][1]], "low"
 
-    # Strategy 4: abstain
     return "abstain", "none"
 
 
 def _extract_score(response: str) -> float:
-    """Parse a judge response to extract a numeric score (1-10).
+    for pattern, group in [
+        (r"(\d+(?:\.\d+)?)\s*/\s*10", 1),
+        (r"[Ss]core:\s*(\d+(?:\.\d+)?)", 1),
+        (r"[Rr]ating:\s*(\d+(?:\.\d+)?)", 1),
+        (r"(\d+(?:\.\d+)?)\s+out\s+of\s+10", 1),
+    ]:
+        m = re.search(pattern, response)
+        if m:
+            return min(10.0, max(1.0, float(m.group(group))))
 
-    Regex cascade:
-    1. "X/10" pattern
-    2. "Score: X" pattern
-    3. "Rating: X" pattern
-    4. "X out of 10" pattern
-    5. Any standalone number 1-10
-    6. Default: 5.0
-    """
-    # Pattern 1: X/10
-    m = re.search(r"(\d+(?:\.\d+)?)\s*/\s*10", response)
-    if m:
-        return min(10.0, max(1.0, float(m.group(1))))
-
-    # Pattern 2: Score: X
-    m = re.search(r"[Ss]core:\s*(\d+(?:\.\d+)?)", response)
-    if m:
-        return min(10.0, max(1.0, float(m.group(1))))
-
-    # Pattern 3: Rating: X
-    m = re.search(r"[Rr]ating:\s*(\d+(?:\.\d+)?)", response)
-    if m:
-        return min(10.0, max(1.0, float(m.group(1))))
-
-    # Pattern 4: X out of 10
-    m = re.search(r"(\d+(?:\.\d+)?)\s+out\s+of\s+10", response)
-    if m:
-        return min(10.0, max(1.0, float(m.group(1))))
-
-    # Pattern 5: any standalone 1-10
     m = re.search(r"\b(\d+(?:\.\d+)?)\b", response)
     if m:
         val = float(m.group(1))
         if 1.0 <= val <= 10.0:
             return val
-
     return 5.0
 
 
 def _pick_models_by_category(categories: list[str]) -> list[str]:
-    """Return model IDs whose category is in the given list."""
     return [mid for mid, info in MODELS.items() if info.category in categories]
 
 
 # ---------------------------------------------------------------------------
-# Original 4 tools
+# Core tools
 # ---------------------------------------------------------------------------
 
 
@@ -185,16 +159,24 @@ async def call_model(
     prompt: str,
     system_prompt: str | None = None,
     temperature: float = 0.7,
+    top_p: float = 0.9,
     max_tokens: int = 4096,
+    response_format: str | dict[str, Any] | None = None,
+    role_label: str = "",
+    tags: list[str] | None = None,
 ) -> CallResult:
     """Call one model. Use list_models to see valid IDs."""
-    get_model(model)  # validate model exists
+    get_model(model)
     return await call_ollama(
         model,
         prompt,
         system_prompt=system_prompt,
         temperature=temperature,
+        top_p=top_p,
         max_tokens=max_tokens,
+        response_format=response_format,
+        role_label=role_label,
+        tags=tags,
     )
 
 
@@ -204,23 +186,26 @@ async def swarm(
     models: list[str] | None = None,
     system_prompt: str | None = None,
     temperature: float = 0.7,
+    top_p: float = 0.9,
     max_tokens: int = 4096,
+    response_format: str | dict[str, Any] | None = None,
 ) -> SwarmResult:
     """Call multiple models in parallel. Defaults to all 13."""
     target_ids = models if models else list(MODELS.keys())
     for mid in target_ids:
-        get_model(mid)  # validate all models exist up front
+        get_model(mid)
 
     sem = asyncio.Semaphore(MAX_CONCURRENCY)
 
     async def _bounded(model_id: str) -> CallResult:
         async with sem:
             return await call_ollama(
-                model_id,
-                prompt,
+                model_id, prompt,
                 system_prompt=system_prompt,
                 temperature=temperature,
+                top_p=top_p,
                 max_tokens=max_tokens,
+                response_format=response_format,
             )
 
     start = time.monotonic()
@@ -246,6 +231,7 @@ async def list_models() -> list[ModelAvailability]:
             model_id=m.model_id,
             display_name=m.display_name,
             category=m.category,
+            strengths=m.strengths,
             available=connected,
         )
         for m in MODELS.values()
@@ -265,7 +251,7 @@ async def health_check() -> HealthStatus:
 
 
 # ---------------------------------------------------------------------------
-# Tool 1: debate
+# Debate
 # ---------------------------------------------------------------------------
 
 
@@ -313,7 +299,7 @@ async def debate(
 
 
 # ---------------------------------------------------------------------------
-# Tool 2: vote
+# Vote
 # ---------------------------------------------------------------------------
 
 
@@ -363,7 +349,6 @@ async def vote(
         else:
             tally["abstain"] += 1
 
-    # Remove abstain key if no abstentions
     if tally["abstain"] == 0:
         del tally["abstain"]
 
@@ -383,7 +368,7 @@ async def vote(
 
 
 # ---------------------------------------------------------------------------
-# Tool 3: consensus
+# Consensus
 # ---------------------------------------------------------------------------
 
 
@@ -402,7 +387,6 @@ async def consensus(
 
     start = time.monotonic()
 
-    # Phase 1: parallel swarm
     sem = asyncio.Semaphore(MAX_CONCURRENCY)
 
     async def _bounded(model_id: str) -> CallResult:
@@ -411,7 +395,6 @@ async def consensus(
 
     responses = list(await asyncio.gather(*[_bounded(mid) for mid in target_ids]))
 
-    # Phase 2: synthesis
     response_block = "\n\n".join(
         f"[{r.model}]: {r.content}" for r in responses if r.status == "ok"
     )
@@ -434,7 +417,7 @@ async def consensus(
 
 
 # ---------------------------------------------------------------------------
-# Tool 4: code_review
+# Code Review
 # ---------------------------------------------------------------------------
 
 
@@ -468,7 +451,6 @@ async def code_review(
     start = time.monotonic()
     reviews = list(await asyncio.gather(*[_bounded(mid) for mid in reviewers]))
 
-    # Merge phase
     review_block = "\n\n".join(
         f"[Review by {r.model}]:\n{r.content}" for r in reviews if r.status == "ok"
     )
@@ -493,7 +475,7 @@ async def code_review(
 
 
 # ---------------------------------------------------------------------------
-# Tool 5: multi_solve
+# Multi-Solve
 # ---------------------------------------------------------------------------
 
 
@@ -508,7 +490,6 @@ async def multi_solve(
         _pick_models_by_category(["code", "reasoning"])
         + ["qwen3-next:80b-cloud", "gpt-oss:120b-cloud"]
     )
-    # Deduplicate while preserving order
     seen: set[str] = set()
     deduped: list[str] = []
     for mid in target_ids:
@@ -545,7 +526,7 @@ async def multi_solve(
 
 
 # ---------------------------------------------------------------------------
-# Tool 6: benchmark
+# Benchmark
 # ---------------------------------------------------------------------------
 
 
@@ -581,7 +562,6 @@ async def benchmark(
     cells = list(await asyncio.gather(*tasks))
     total_elapsed = round(time.monotonic() - start, 2)
 
-    # Compute per-model average latency
     model_times: dict[str, list[float]] = {mid: [] for mid in target_ids}
     for cell in cells:
         if cell.status == "ok":
@@ -601,7 +581,7 @@ async def benchmark(
 
 
 # ---------------------------------------------------------------------------
-# Tool 7: rank
+# Rank
 # ---------------------------------------------------------------------------
 
 
@@ -619,21 +599,18 @@ async def rank(
     start = time.monotonic()
     sem = asyncio.Semaphore(MAX_CONCURRENCY)
 
-    # Phase 1: all models answer
     async def _answer(model_id: str) -> CallResult:
         async with sem:
             return await call_ollama(model_id, prompt)
 
     answers = list(await asyncio.gather(*[_answer(mid) for mid in target_ids]))
 
-    # Phase 2: peer evaluation
     judge_system = (
         "Rate the following response on a scale of 1 to 10. "
         "Start your reply with 'Score: X/10' then explain briefly."
     )
 
     async def _judge(judge_id: str, answer: CallResult) -> tuple[str, str, float]:
-        """Returns (target_model, judge_model, score)."""
         async with sem:
             judge_prompt = (
                 f"Question: {prompt}\n\n"
@@ -646,7 +623,6 @@ async def rank(
     judge_tasks = []
     rng = random.Random(hash(prompt))
     for answer in answers:
-        # Pick judges that are NOT the answer's own model
         candidates = [mid for mid in target_ids if mid != answer.model]
         actual_count = min(judge_count, len(candidates))
         judges = rng.sample(candidates, actual_count) if candidates else []
@@ -655,7 +631,6 @@ async def rank(
 
     judge_results = list(await asyncio.gather(*judge_tasks))
 
-    # Aggregate scores
     scores_map: dict[str, dict[str, float]] = {mid: {} for mid in target_ids}
     for target_model, judge_model, score in judge_results:
         scores_map[target_model][judge_model] = score
@@ -684,7 +659,7 @@ async def rank(
 
 
 # ---------------------------------------------------------------------------
-# Tool 8: chain
+# Chain
 # ---------------------------------------------------------------------------
 
 
@@ -729,6 +704,7 @@ async def chain(
                 step=i + 1,
                 model=model_id,
                 content=result.content,
+                thinking=result.thinking,
                 elapsed_seconds=step_elapsed,
             )
         )
@@ -745,7 +721,7 @@ async def chain(
 
 
 # ---------------------------------------------------------------------------
-# Tool 9: map_reduce
+# Map-Reduce
 # ---------------------------------------------------------------------------
 
 
@@ -772,7 +748,6 @@ async def map_reduce(
     start = time.monotonic()
     mapped = list(await asyncio.gather(*[_map(mid) for mid in mappers]))
 
-    # Reduce phase
     response_block = "\n\n".join(
         f"[{r.model}]: {r.content}" for r in mapped if r.status == "ok"
     )
@@ -800,7 +775,7 @@ async def map_reduce(
 
 
 # ---------------------------------------------------------------------------
-# Tool 10: blind_taste_test
+# Blind Taste Test
 # ---------------------------------------------------------------------------
 
 
@@ -813,7 +788,6 @@ async def blind_taste_test(
     all_ids = list(MODELS.keys())
     count = min(count, len(all_ids))
 
-    # Deterministic selection seeded by prompt hash for reproducibility
     seed = int(hashlib.sha256(prompt.encode()).hexdigest(), 16) % (2**32)
     rng = random.Random(seed)
     selected = rng.sample(all_ids, count)
@@ -827,11 +801,10 @@ async def blind_taste_test(
     start = time.monotonic()
     results = list(await asyncio.gather(*[_call(mid) for mid in selected]))
 
-    # Shuffle presentation order
     indexed = list(enumerate(results))
     rng.shuffle(indexed)
 
-    labels = [chr(65 + i) for i in range(count)]  # A, B, C, ...
+    labels = [chr(65 + i) for i in range(count)]
     responses: list[BlindResponse] = []
     reveal: dict[str, str] = {}
     for label, (_, r) in zip(labels, indexed):
@@ -848,7 +821,7 @@ async def blind_taste_test(
 
 
 # ---------------------------------------------------------------------------
-# Tool 11: contrarian
+# Contrarian
 # ---------------------------------------------------------------------------
 
 
@@ -866,10 +839,8 @@ async def contrarian(
 
     start = time.monotonic()
 
-    # Phase 1: thesis
     thesis_result = await call_ollama(t_model, prompt)
 
-    # Phase 2: antithesis
     anti_system = (
         "You are a critical analyst. Find logical gaps, challenge assumptions, "
         "identify missing perspectives, and argue alternatives. "

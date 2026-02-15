@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import os
 import time
+from typing import Any
 
 import aiohttp
 
@@ -18,8 +19,12 @@ async def call_ollama(
     *,
     system_prompt: str | None = None,
     temperature: float = 0.7,
+    top_p: float = 0.9,
     max_tokens: int = 4096,
     timeout_seconds: int = 120,
+    response_format: str | dict[str, Any] | None = None,
+    role_label: str = "",
+    tags: list[str] | None = None,
 ) -> CallResult:
     """Send a single chat completion request to Ollama."""
     messages: list[dict[str, str]] = []
@@ -27,15 +32,18 @@ async def call_ollama(
         messages.append({"role": "system", "content": system_prompt})
     messages.append({"role": "user", "content": prompt})
 
-    payload = {
+    payload: dict[str, Any] = {
         "model": model,
         "stream": False,
         "messages": messages,
         "options": {
             "temperature": temperature,
+            "top_p": top_p,
             "num_predict": max_tokens,
         },
     }
+    if response_format is not None:
+        payload["format"] = response_format
 
     start = time.monotonic()
     try:
@@ -49,14 +57,38 @@ async def call_ollama(
         ):
             raw = await resp.json()
 
-        content = raw.get("message", {}).get("content", "")
+        msg = raw.get("message", {})
+        content = msg.get("content", "")
+        thinking = msg.get("thinking", None)
         elapsed = round(time.monotonic() - start, 2)
-        return CallResult(model=model, content=content, elapsed_seconds=elapsed)
+
+        warnings: list[str] = []
+        if not content and resp.status == 200:
+            warnings.append(
+                f"Model {model} returned empty content "
+                f"(possible reasoning-token exhaustion). "
+                f"Elapsed: {elapsed}s, max_tokens: {max_tokens}"
+            )
+
+        return CallResult(
+            model=model,
+            content=content,
+            thinking=thinking,
+            elapsed_seconds=elapsed,
+            role_label=role_label,
+            tags=tags or [],
+            warnings=warnings,
+        )
 
     except Exception as exc:
         elapsed = round(time.monotonic() - start, 2)
         return CallResult(
-            model=model, status="error", error=str(exc), elapsed_seconds=elapsed
+            model=model,
+            status="error",
+            error=str(exc),
+            elapsed_seconds=elapsed,
+            role_label=role_label,
+            tags=tags or [],
         )
 
 

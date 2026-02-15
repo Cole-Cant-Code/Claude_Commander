@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from typing import Any
+
 from pydantic import BaseModel, Field
 
 
@@ -10,9 +12,13 @@ class CallResult(BaseModel):
 
     model: str
     content: str = ""
+    thinking: str | None = None
     elapsed_seconds: float = 0.0
     status: str = "ok"
     error: str | None = None
+    role_label: str = ""
+    tags: list[str] = Field(default_factory=list)
+    warnings: list[str] = Field(default_factory=list)
 
 
 class SwarmResult(BaseModel):
@@ -31,6 +37,7 @@ class ModelAvailability(BaseModel):
     model_id: str
     display_name: str
     category: str
+    strengths: list[str] = Field(default_factory=list)
     available: bool
 
 
@@ -187,6 +194,7 @@ class ChainStep(BaseModel):
     step: int
     model: str
     content: str = ""
+    thinking: str | None = None
     elapsed_seconds: float = 0.0
 
 
@@ -246,4 +254,53 @@ class ContrarianResult(BaseModel):
     thesis: str = ""
     antithesis_model: str = ""
     antithesis: str = ""
+    total_elapsed_seconds: float = 0.0
+
+
+# ---------------------------------------------------------------------------
+# Profiles
+# ---------------------------------------------------------------------------
+
+class ProfileData(BaseModel):
+    """Reusable model profile with all configuration options."""
+
+    model: str
+    role_label: str = ""
+    system_prompt: str = ""
+    temperature: float = 0.7
+    top_p: float = 0.9
+    max_tokens: int = 4096
+    timeout_seconds: int = 120
+    response_format: str | dict[str, Any] | None = None
+    tags: list[str] = Field(default_factory=list)
+
+
+class ProfileListResult(BaseModel):
+    """List of all saved profiles."""
+
+    profiles: dict[str, dict[str, Any]] = Field(default_factory=dict)
+    count: int = 0
+
+
+# ---------------------------------------------------------------------------
+# Pipeline
+# ---------------------------------------------------------------------------
+
+class PipelineStepResult(BaseModel):
+    """One step in a sequential pipeline."""
+
+    step: int
+    model: str
+    role_label: str = ""
+    content: str = ""
+    thinking: str | None = None
+    elapsed_seconds: float = 0.0
+
+
+class PipelineResult(BaseModel):
+    """Result of running a profile-based pipeline."""
+
+    prompt: str
+    steps: list[PipelineStepResult] = Field(default_factory=list)
+    final_output: str = ""
     total_elapsed_seconds: float = 0.0
