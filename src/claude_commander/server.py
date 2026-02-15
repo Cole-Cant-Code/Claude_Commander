@@ -62,6 +62,27 @@ RANK_DEFAULT_MODELS = [
 # ---------------------------------------------------------------------------
 
 
+TRUNCATE_LEN = 200  # max chars for intermediate responses returned to caller
+
+
+def _truncate(text: str, limit: int = TRUNCATE_LEN) -> str:
+    """Truncate text for return values. Keeps full text for internal processing."""
+    if len(text) <= limit:
+        return text
+    return text[:limit] + "..."
+
+
+def _truncate_result(r: CallResult, limit: int = TRUNCATE_LEN) -> CallResult:
+    """Return a copy of CallResult with truncated content."""
+    return CallResult(
+        model=r.model,
+        content=_truncate(r.content, limit),
+        elapsed_seconds=r.elapsed_seconds,
+        status=r.status,
+        error=r.error,
+    )
+
+
 def _extract_vote(response: str, options: list[str]) -> tuple[str, str]:
     """Parse a model response to extract a vote from the given options.
 
@@ -208,7 +229,7 @@ async def swarm(
 
     succeeded = sum(1 for r in results if r.status == "ok")
     return SwarmResult(
-        results=results,
+        results=[_truncate_result(r) for r in results],
         total_elapsed_seconds=total_elapsed,
         models_called=len(target_ids),
         models_succeeded=succeeded,
@@ -332,7 +353,7 @@ async def vote(
         votes.append(
             Vote(
                 model=r.model,
-                raw_response=r.content,
+                raw_response=_truncate(r.content),
                 extracted_vote=extracted,
                 confidence=confidence,
             )
@@ -405,7 +426,7 @@ async def consensus(
     total_elapsed = round(time.monotonic() - start, 2)
     return ConsensusResult(
         prompt=prompt,
-        individual_responses=responses,
+        individual_responses=[_truncate_result(r) for r in responses],
         synthesis=synthesis_result.content,
         judge_model=judge,
         total_elapsed_seconds=total_elapsed,
@@ -462,8 +483,8 @@ async def code_review(
 
     total_elapsed = round(time.monotonic() - start, 2)
     return CodeReviewResult(
-        code_snippet=code[:500],  # truncate for result readability
-        reviews=reviews,
+        code_snippet=code[:500],
+        reviews=[_truncate_result(r) for r in reviews],
         merged_review=merge_result.content,
         reviewer_models=reviewers,
         merge_model=merger,
@@ -546,7 +567,7 @@ async def benchmark(
             return BenchmarkCell(
                 model=model_id,
                 prompt_index=prompt_idx,
-                content=result.content,
+                content=_truncate(result.content),
                 elapsed_seconds=result.elapsed_seconds,
                 status=result.status,
             )
@@ -649,7 +670,7 @@ async def rank(
                 model=mid,
                 avg_score=avg,
                 scores_received=received,
-                response=answer_content,
+                response=_truncate(answer_content),
             )
         )
     leaderboard.sort(key=lambda s: s.avg_score, reverse=True)
@@ -771,7 +792,7 @@ async def map_reduce(
     total_elapsed = round(time.monotonic() - start, 2)
     return MapReduceResult(
         prompt=prompt,
-        mapped_responses=mapped,
+        mapped_responses=[_truncate_result(r) for r in mapped],
         reduced_output=reduce_result.content,
         reducer_model=reducer,
         total_elapsed_seconds=total_elapsed,
