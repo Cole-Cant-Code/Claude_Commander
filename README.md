@@ -67,7 +67,7 @@ Server name: `claude-commander` | Instructions: [`CLAUDE.md`](CLAUDE.md)
 Use Commander for external validation, diverse perspectives, and contrarian checks.
 
 ```bash
-claude mcp add claude-commander -- uv run --project /path/to/Claude_Commander fastmcp run claude_commander.server:mcp
+claude mcp add claude-commander -- uv run --project /path/to/Claude_Commander fastmcp run /path/to/Claude_Commander/src/claude_commander/server.py:mcp
 ```
 
 Or add to `~/.claude.json`:
@@ -77,7 +77,7 @@ Or add to `~/.claude.json`:
   "mcpServers": {
     "claude-commander": {
       "command": "uv",
-      "args": ["run", "--project", "/path/to/Claude_Commander", "fastmcp", "run", "claude_commander.server:mcp"],
+      "args": ["run", "--project", "/path/to/Claude_Commander", "fastmcp", "run", "/path/to/Claude_Commander/src/claude_commander/server.py:mcp"],
       "env": { "OLLAMA_BASE_URL": "http://your-ollama-host:11434" }
     }
   }
@@ -95,7 +95,7 @@ Add to `~/.codex/config.toml`:
 ```toml
 [mcp_servers.codex-commander]
 command = "uv"
-args = ["run", "--project", "/path/to/Claude_Commander", "fastmcp", "run", "claude_commander.server:mcp"]
+args = ["run", "--project", "/path/to/Claude_Commander", "fastmcp", "run", "/path/to/Claude_Commander/src/claude_commander/server.py:mcp"]
 
 [mcp_servers.codex-commander.env]
 MCP_SERVER_NAME = "Codex Commander"
@@ -107,7 +107,7 @@ OLLAMA_BASE_URL = "http://your-ollama-host:11434"
 Server name: `gemini-commander`
 
 ```bash
-gemini mcp add -e OLLAMA_BASE_URL=http://your-ollama-host:11434 gemini-commander -- uv run --project /path/to/Claude_Commander fastmcp run claude_commander.server:mcp
+gemini mcp add -e OLLAMA_BASE_URL=http://your-ollama-host:11434 gemini-commander -- uv run --project /path/to/Claude_Commander fastmcp run /path/to/Claude_Commander/src/claude_commander/server.py:mcp
 ```
 
 Or add to `~/.gemini/settings.json`:
@@ -117,7 +117,7 @@ Or add to `~/.gemini/settings.json`:
   "mcpServers": {
     "gemini-commander": {
       "command": "uv",
-      "args": ["run", "--project", "/path/to/Claude_Commander", "fastmcp", "run", "claude_commander.server:mcp"],
+      "args": ["run", "--project", "/path/to/Claude_Commander", "fastmcp", "run", "/path/to/Claude_Commander/src/claude_commander/server.py:mcp"],
       "env": { "OLLAMA_BASE_URL": "http://your-ollama-host:11434" }
     }
   }
@@ -135,7 +135,7 @@ Add to `~/.kimi/mcp.json`:
   "mcpServers": {
     "kimi-commander": {
       "command": "uv",
-      "args": ["run", "--project", "/path/to/Claude_Commander", "fastmcp", "run", "claude_commander.server:mcp"],
+      "args": ["run", "--project", "/path/to/Claude_Commander", "fastmcp", "run", "/path/to/Claude_Commander/src/claude_commander/server.py:mcp"],
       "env": { "OLLAMA_BASE_URL": "http://your-ollama-host:11434" }
     }
   }

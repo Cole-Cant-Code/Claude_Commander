@@ -23,7 +23,7 @@ Add to `~/.codex/config.toml`:
 ```toml
 [mcp_servers.codex-commander]
 command = "uv"
-args = ["run", "--project", "/Users/cole/Claude_Commander", "fastmcp", "run", "claude_commander.server:mcp"]
+args = ["run", "--project", "/Users/cole/Claude_Commander", "fastmcp", "run", "/Users/cole/Claude_Commander/src/claude_commander/server.py:mcp"]
 
 [mcp_servers.codex-commander.env]
 MCP_SERVER_NAME = "Codex Commander"

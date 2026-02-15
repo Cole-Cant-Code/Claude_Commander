@@ -24,7 +24,7 @@ Already configured as a project-level server. If missing, add to `~/.claude.json
 {
   "claude-commander": {
     "command": "uv",
-    "args": ["run", "--project", "/Users/cole/Claude_Commander", "fastmcp", "run", "claude_commander.server:mcp"],
+    "args": ["run", "--project", "/Users/cole/Claude_Commander", "fastmcp", "run", "/Users/cole/Claude_Commander/src/claude_commander/server.py:mcp"],
     "env": { "OLLAMA_BASE_URL": "http://localhost:11434" }
   }
 }
