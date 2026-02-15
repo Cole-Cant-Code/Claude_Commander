@@ -6,14 +6,16 @@ from pydantic import BaseModel, Field
 
 
 class ModelInfo(BaseModel):
-    """Metadata for a registered Ollama model."""
+    """Metadata for a registered Ollama model or CLI tool."""
 
     model_id: str
     display_name: str
-    category: str  # general, code, vision, reasoning
+    category: str  # general, code, vision, reasoning, cli
     strengths: list[str] = Field(default_factory=list)
     default_temperature: float = 0.7
     is_thinking: bool = False
+    is_cli: bool = False
+    cli_command: list[str] = Field(default_factory=list)
 
 
 MODELS: dict[str, ModelInfo] = {
@@ -101,6 +103,39 @@ MODELS: dict[str, ModelInfo] = {
             display_name="Kimi K2.5",
             category="general",
             strengths=["speed", "agentic execution"],
+        ),
+        # ----- CLI models -----
+        ModelInfo(
+            model_id="claude:cli",
+            display_name="Claude Code CLI",
+            category="cli",
+            strengths=["code generation", "reasoning", "tool use", "agentic execution"],
+            is_cli=True,
+            cli_command=["claude", "-p", "{prompt}", "--output-format", "text", "--no-session-persistence"],
+        ),
+        ModelInfo(
+            model_id="gemini:cli",
+            display_name="Gemini CLI",
+            category="cli",
+            strengths=["code generation", "reasoning", "multimodal", "search"],
+            is_cli=True,
+            cli_command=["gemini", "-p", "{prompt}", "-o", "text"],
+        ),
+        ModelInfo(
+            model_id="codex:cli",
+            display_name="Codex CLI",
+            category="cli",
+            strengths=["code generation", "agentic execution", "sandboxed execution"],
+            is_cli=True,
+            cli_command=["codex", "exec", "{prompt}", "--json"],
+        ),
+        ModelInfo(
+            model_id="kimi:cli",
+            display_name="Kimi CLI",
+            category="cli",
+            strengths=["code generation", "agentic execution", "tool use"],
+            is_cli=True,
+            cli_command=["kimi", "--print", "-p", "{prompt}"],
         ),
     ]
 }

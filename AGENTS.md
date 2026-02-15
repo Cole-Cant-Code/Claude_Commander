@@ -27,7 +27,7 @@ args = ["run", "--project", "/Users/cole/Claude_Commander", "fastmcp", "run", "c
 
 [mcp_servers.codex-commander.env]
 MCP_SERVER_NAME = "Codex Commander"
-OLLAMA_BASE_URL = "http://100.64.0.7:11434"
+OLLAMA_BASE_URL = "http://localhost:11434"
 ```
 
 ## Tools
@@ -62,4 +62,4 @@ OLLAMA_BASE_URL = "http://100.64.0.7:11434"
 - `call_model` with `role_label` and `tags` lets you track who said what in multi-step flows
 - Thinking models return a `thinking` field — useful for understanding their reasoning
 - Intermediate results are truncated to 200 chars; use `call_model` for full output
-- The Ollama endpoint is on Tailscale at `100.64.0.7:11434`
+- The Ollama endpoint is at `localhost:11434`

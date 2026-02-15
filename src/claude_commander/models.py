@@ -273,6 +273,9 @@ class ProfileData(BaseModel):
     timeout_seconds: int = 120
     response_format: str | dict[str, Any] | None = None
     tags: list[str] = Field(default_factory=list)
+    description: str = ""
+    parent: str = ""
+    builtin: bool = False
 
 
 class ProfileListResult(BaseModel):
@@ -285,6 +288,155 @@ class ProfileListResult(BaseModel):
 # ---------------------------------------------------------------------------
 # Pipeline
 # ---------------------------------------------------------------------------
+
+
+class PipelineData(BaseModel):
+    """Saved pipeline definition — an ordered sequence of profile/model steps."""
+
+    name: str
+    description: str = ""
+    steps: list[str] = Field(default_factory=list)
+    builtin: bool = False
+
+
+# ---------------------------------------------------------------------------
+# Verify
+# ---------------------------------------------------------------------------
+
+
+class ClaimVerification(BaseModel):
+    """Per-claim verdict from cross-model fact verification."""
+
+    claim: str
+    verdict: str = "unverifiable"  # supported/unsupported/contradicted/unverifiable
+    confidence: float = 0.0  # 0-1
+    reasoning: str = ""
+    sources_cited: list[str] = Field(default_factory=list)
+
+
+class VerifyResult(BaseModel):
+    """Cross-model fact verification result."""
+
+    content_snippet: str
+    claims: list[ClaimVerification] = Field(default_factory=list)
+    overall_verdict: str = "mixed"  # pass/fail/mixed
+    overall_confidence: float = 0.0
+    internal_contradictions: list[str] = Field(default_factory=list)
+    verifier_models: list[str] = Field(default_factory=list)
+    total_elapsed_seconds: float = 0.0
+
+
+# ---------------------------------------------------------------------------
+# Red Team
+# ---------------------------------------------------------------------------
+
+
+class RedTeamExchange(BaseModel):
+    """One attack/defense round in adversarial stress testing."""
+
+    round_number: int
+    attack: str
+    attack_model: str
+    defense: str
+    defense_model: str
+
+
+class SurvivingIssue(BaseModel):
+    """An unresolved issue from red-team testing."""
+
+    issue: str
+    severity: str = "minor"  # critical/major/minor
+    first_raised_round: int = 1
+
+
+class RedTeamResult(BaseModel):
+    """Result of iterative adversarial stress testing."""
+
+    content_snippet: str
+    exchanges: list[RedTeamExchange] = Field(default_factory=list)
+    surviving_issues: list[SurvivingIssue] = Field(default_factory=list)
+    robustness_score: float = 5.0  # 1-10
+    rounds_completed: int = 0
+    converged: bool = False
+    attacker_model: str = ""
+    defender_model: str = ""
+    total_elapsed_seconds: float = 0.0
+
+
+# ---------------------------------------------------------------------------
+# Quality Gate
+# ---------------------------------------------------------------------------
+
+
+class CriterionScore(BaseModel):
+    """Score for a single quality criterion."""
+
+    criterion: str
+    score: float = 5.0  # 1-10
+    max_score: float = 10.0
+    issues: list[str] = Field(default_factory=list)
+
+
+class QualityGateResult(BaseModel):
+    """Pass/fail evaluation against quality criteria."""
+
+    content_snippet: str
+    passed: bool = False
+    overall_score: float = 0.0
+    threshold: float = 7.0
+    criteria_scores: list[CriterionScore] = Field(default_factory=list)
+    blocking_issues: list[str] = Field(default_factory=list)
+    judge_model: str = ""
+    total_elapsed_seconds: float = 0.0
+
+
+# ---------------------------------------------------------------------------
+# Detect Slop
+# ---------------------------------------------------------------------------
+
+
+class SlopSignal(BaseModel):
+    """A detected signal of low-quality AI-generated content."""
+
+    signal_type: str  # filler_phrases, vague_generalities, etc.
+    description: str = ""
+    examples: list[str] = Field(default_factory=list)
+    severity: str = "minor"  # critical/major/minor
+
+
+class DetectSlopResult(BaseModel):
+    """AI garbage detection result."""
+
+    content_snippet: str
+    slop_score: float = 0.0  # 0-10
+    verdict: str = "clean"  # clean/mild/significant/severe
+    signals: list[SlopSignal] = Field(default_factory=list)
+    detector_models: list[str] = Field(default_factory=list)
+    agreement_pct: float = 0.0
+    total_elapsed_seconds: float = 0.0
+
+
+# ---------------------------------------------------------------------------
+# Exec Task
+# ---------------------------------------------------------------------------
+
+
+class ExecTaskResult(BaseModel):
+    """Result from delegating a coding task to a local CLI agent."""
+
+    task: str
+    agent: str
+    working_dir: str = ""
+    output: str = ""
+    status: str = "ok"
+    error: str = ""
+    elapsed_seconds: float = 0.0
+
+
+# ---------------------------------------------------------------------------
+# Pipeline
+# ---------------------------------------------------------------------------
+
 
 class PipelineStepResult(BaseModel):
     """One step in a sequential pipeline."""
@@ -303,4 +455,5 @@ class PipelineResult(BaseModel):
     prompt: str
     steps: list[PipelineStepResult] = Field(default_factory=list)
     final_output: str = ""
+    pipeline_name: str = ""
     total_elapsed_seconds: float = 0.0

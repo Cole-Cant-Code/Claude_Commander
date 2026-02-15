@@ -19,11 +19,13 @@ _DEFAULT_DIR = Path.home() / ".claude-commander" / "profiles"
 class ProfileStore:
     """In-memory profile store with disk persistence."""
 
-    def __init__(self, persist_dir: Path | None = None) -> None:
+    def __init__(self, persist_dir: Path | None = None, *, seed: bool = True) -> None:
         self._profiles: dict[str, ProfileData] = {}
         self._persist_dir = persist_dir or _DEFAULT_DIR
         self._persist_dir.mkdir(parents=True, exist_ok=True)
         self._load_all()
+        if seed:
+            self._seed_defaults()
 
     def save(self, name: str, profile: ProfileData) -> None:
         if not _NAME_RE.match(name):
@@ -38,8 +40,13 @@ class ProfileStore:
         return self._profiles.get(name)
 
     def delete(self, name: str) -> bool:
-        if name not in self._profiles:
+        profile = self._profiles.get(name)
+        if profile is None:
             return False
+        if profile.builtin:
+            raise ValueError(
+                f"Cannot delete builtin profile '{name}'. Clone it instead."
+            )
         del self._profiles[name]
         path = self._persist_dir / f"{name}.json"
         path.unlink(missing_ok=True)
@@ -47,6 +54,29 @@ class ProfileStore:
 
     def list_all(self) -> dict[str, dict[str, Any]]:
         return {name: p.model_dump() for name, p in sorted(self._profiles.items())}
+
+    def has_profile(self, name: str) -> bool:
+        return name in self._profiles
+
+    def clone(self, source: str, target: str, **overrides: Any) -> ProfileData:
+        """Clone an existing profile with optional field overrides."""
+        src = self._profiles.get(source)
+        if src is None:
+            raise ValueError(f"Source profile '{source}' not found.")
+        if not _NAME_RE.match(target):
+            raise ValueError(
+                f"Invalid profile name '{target}'. "
+                "Use only letters, digits, hyphens, and underscores."
+            )
+        data = src.model_dump()
+        data["builtin"] = False
+        data["parent"] = source
+        for key, val in overrides.items():
+            if key in data:
+                data[key] = val
+        cloned = ProfileData(**data)
+        self.save(target, cloned)
+        return cloned
 
     def _persist(self, name: str, profile: ProfileData) -> None:
         try:
@@ -64,6 +94,11 @@ class ProfileStore:
                 self._profiles[path.stem] = ProfileData(**data)
             except Exception:
                 logger.warning("Skipping corrupt profile file: %s", path)
+
+    def _seed_defaults(self) -> None:
+        from claude_commander.defaults import seed_profiles
+
+        seed_profiles(self)
 
 
 # Module-level singleton

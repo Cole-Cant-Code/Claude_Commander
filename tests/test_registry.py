@@ -5,8 +5,8 @@ import pytest
 from claude_commander.registry import MODELS, ModelInfo, get_model
 
 
-def test_registry_has_13_models():
-    assert len(MODELS) == 13
+def test_registry_has_17_models():
+    assert len(MODELS) == 17
 
 
 def test_all_entries_are_model_info():
@@ -20,7 +20,7 @@ def test_model_ids_are_keys():
 
 
 def test_categories_are_valid():
-    valid = {"general", "code", "vision", "reasoning"}
+    valid = {"general", "code", "vision", "reasoning", "cli"}
     for model in MODELS.values():
         assert model.category in valid, f"{model.model_id} has invalid category"
 
@@ -50,6 +50,10 @@ EXPECTED_IDS = [
     "minimax-m2.1:cloud",
     "glm-4.7:cloud",
     "kimi-k2.5:cloud",
+    "claude:cli",
+    "gemini:cli",
+    "codex:cli",
+    "kimi:cli",
 ]
 
 

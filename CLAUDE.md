@@ -25,7 +25,7 @@ Already configured as a project-level server. If missing, add to `~/.claude.json
   "claude-commander": {
     "command": "uv",
     "args": ["run", "--project", "/Users/cole/Claude_Commander", "fastmcp", "run", "claude_commander.server:mcp"],
-    "env": { "OLLAMA_BASE_URL": "http://100.64.0.7:11434" }
+    "env": { "OLLAMA_BASE_URL": "http://localhost:11434" }
   }
 }
 ```
@@ -62,4 +62,4 @@ Already configured as a project-level server. If missing, add to `~/.claude.json
 - `call_model` with `role_label` and `tags` lets you track who said what in multi-step flows
 - Thinking models return a `thinking` field — useful for understanding their reasoning
 - Intermediate results are truncated to 200 chars; use `call_model` for full output
-- The Ollama endpoint is on Tailscale at `100.64.0.7:11434`
+- The Ollama endpoint is at `localhost:11434`

@@ -564,7 +564,8 @@ async def test_map_reduce_custom_reducer():
 
 @pytest.mark.asyncio
 async def test_blind_taste_test_basic():
-    with patch("claude_commander.server.call_ollama", side_effect=_make_mock_varied()):
+    with patch("claude_commander.server.call_ollama", side_effect=_make_mock_varied()), \
+         patch("claude_commander.server.call_cli", side_effect=_make_mock_varied()):
         result = await _blind_taste_test("Tell me a joke")
     assert len(result.responses) == 3  # default count
     assert len(result.reveal) == 3
@@ -578,25 +579,29 @@ async def test_blind_taste_test_basic():
 @pytest.mark.asyncio
 async def test_blind_taste_test_deterministic():
     """Same prompt should select same models."""
-    with patch("claude_commander.server.call_ollama", side_effect=_make_mock_varied()):
+    with patch("claude_commander.server.call_ollama", side_effect=_make_mock_varied()), \
+         patch("claude_commander.server.call_cli", side_effect=_make_mock_varied()):
         r1 = await _blind_taste_test("same prompt")
-    with patch("claude_commander.server.call_ollama", side_effect=_make_mock_varied()):
+    with patch("claude_commander.server.call_ollama", side_effect=_make_mock_varied()), \
+         patch("claude_commander.server.call_cli", side_effect=_make_mock_varied()):
         r2 = await _blind_taste_test("same prompt")
     assert r1.reveal == r2.reveal
 
 
 @pytest.mark.asyncio
 async def test_blind_taste_test_custom_count():
-    with patch("claude_commander.server.call_ollama", side_effect=_make_mock_varied()):
+    with patch("claude_commander.server.call_ollama", side_effect=_make_mock_varied()), \
+         patch("claude_commander.server.call_cli", side_effect=_make_mock_varied()):
         result = await _blind_taste_test("test", count=5)
     assert len(result.responses) == 5
 
 
 @pytest.mark.asyncio
 async def test_blind_taste_test_count_capped():
-    with patch("claude_commander.server.call_ollama", side_effect=_make_mock_varied()):
+    with patch("claude_commander.server.call_ollama", side_effect=_make_mock_varied()), \
+         patch("claude_commander.server.call_cli", side_effect=_make_mock_varied()):
         result = await _blind_taste_test("test", count=100)
-    assert len(result.responses) == 13  # max = total models
+    assert len(result.responses) == 17  # max = total models
 
 
 # ---------------------------------------------------------------------------
