@@ -9,6 +9,7 @@ from typing import Any
 import aiohttp
 
 from claude_commander.models import CallResult
+from claude_commander.registry import MODELS
 
 OLLAMA_BASE_URL = os.environ.get("OLLAMA_BASE_URL", "http://localhost:11434")
 
@@ -30,6 +31,13 @@ async def call_ollama(
     messages: list[dict[str, str]] = []
     if system_prompt:
         messages.append({"role": "system", "content": system_prompt})
+    else:
+        info = MODELS.get(model)
+        name = info.display_name if info else model
+        messages.append({
+            "role": "system",
+            "content": f"You are {name}. Answer the user's question directly.",
+        })
     messages.append({"role": "user", "content": prompt})
 
     payload: dict[str, Any] = {

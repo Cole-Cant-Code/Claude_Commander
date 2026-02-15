@@ -9,11 +9,12 @@ model responses.
 Add to `~/.codex/config.toml`:
 
 ```toml
-[mcp_servers.claude-commander]
+[mcp_servers.codex-commander]
 command = "uv"
 args = ["run", "--project", "/Users/cole/Claude_Commander", "fastmcp", "run", "claude_commander.server:mcp"]
 
-[mcp_servers.claude-commander.env]
+[mcp_servers.codex-commander.env]
+MCP_SERVER_NAME = "Codex Commander"
 OLLAMA_BASE_URL = "http://100.64.0.7:11434"
 ```
 
