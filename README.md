@@ -97,9 +97,45 @@ OLLAMA_BASE_URL = "http://your-ollama-host:11434"
 
 Agent instructions: see [`AGENTS.md`](AGENTS.md)
 
+### Gemini CLI
+
+```bash
+gemini mcp add -e OLLAMA_BASE_URL=http://your-ollama-host:11434 claude-commander -- uv run --project /path/to/Claude_Commander fastmcp run claude_commander.server:mcp
+```
+
+Or add to `~/.gemini/settings.json`:
+
+```json
+{
+  "mcpServers": {
+    "claude-commander": {
+      "command": "uv",
+      "args": ["run", "--project", "/path/to/Claude_Commander", "fastmcp", "run", "claude_commander.server:mcp"],
+      "env": { "OLLAMA_BASE_URL": "http://your-ollama-host:11434" }
+    }
+  }
+}
+```
+
+### Kimi CLI
+
+Add to `~/.kimi/mcp.json`:
+
+```json
+{
+  "mcpServers": {
+    "claude-commander": {
+      "command": "uv",
+      "args": ["run", "--project", "/path/to/Claude_Commander", "fastmcp", "run", "claude_commander.server:mcp"],
+      "env": { "OLLAMA_BASE_URL": "http://your-ollama-host:11434" }
+    }
+  }
+}
+```
+
 ## Usage examples
 
-These are MCP tool calls. Your client (Claude Code, etc.) invokes them directly.
+These are MCP tool calls. Your client (Claude Code, Codex, Gemini, Kimi, etc.) invokes them directly.
 
 **Debate** — two models argue about a topic:
 ```
