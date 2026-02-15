@@ -166,15 +166,7 @@ async def call_model(
     temperature: float = 0.7,
     max_tokens: int = 4096,
 ) -> CallResult:
-    """Call a single Ollama model and return its response.
-
-    Args:
-        model: Model ID from the registry (e.g. "deepseek-v3.2:cloud").
-        prompt: The user prompt to send.
-        system_prompt: Optional system prompt.
-        temperature: Sampling temperature (0.0-2.0).
-        max_tokens: Maximum tokens to generate.
-    """
+    """Call one model. Use list_models to see valid IDs."""
     get_model(model)  # validate model exists
     return await call_ollama(
         model,
@@ -193,15 +185,7 @@ async def swarm(
     temperature: float = 0.7,
     max_tokens: int = 4096,
 ) -> SwarmResult:
-    """Call multiple models in parallel and collect results.
-
-    Args:
-        prompt: The user prompt to send to all models.
-        models: List of model IDs. Defaults to all 13 registered models.
-        system_prompt: Optional system prompt for all models.
-        temperature: Sampling temperature (0.0-2.0).
-        max_tokens: Maximum tokens per model.
-    """
+    """Call multiple models in parallel. Defaults to all 13."""
     target_ids = models if models else list(MODELS.keys())
     for mid in target_ids:
         get_model(mid)  # validate all models exist up front
@@ -234,7 +218,7 @@ async def swarm(
 
 @mcp.tool()
 async def list_models() -> list[ModelAvailability]:
-    """List all registered models with live Ollama availability check."""
+    """List registered models with availability status."""
     connected = await check_ollama()
     return [
         ModelAvailability(
@@ -271,17 +255,7 @@ async def debate(
     model_b: str | None = None,
     rounds: int = 3,
 ) -> DebateResult:
-    """Run a multi-round debate between two models.
-
-    Each model sees the full transcript so far, producing a back-and-forth
-    exchange of perspectives.
-
-    Args:
-        prompt: The topic or question to debate.
-        model_a: First debater model ID. Defaults to deepseek-v3.2:cloud.
-        model_b: Second debater model ID. Defaults to glm-5:cloud.
-        rounds: Number of rounds (alternating turns). Defaults to 3.
-    """
+    """Multi-round debate. Models alternate, each seeing full transcript."""
     a = model_a or DEFAULT_DEBATE[0]
     b = model_b or DEFAULT_DEBATE[1]
     get_model(a)
@@ -328,16 +302,7 @@ async def vote(
     options: list[str] | None = None,
     models: list[str] | None = None,
 ) -> VoteResult:
-    """Have multiple models vote on a question from a set of options.
-
-    Each model is instructed to start its response with one of the option
-    words. Votes are extracted with multi-strategy parsing.
-
-    Args:
-        prompt: The question to vote on.
-        options: List of valid vote options. Defaults to ["yes", "no"].
-        models: List of model IDs to poll. Defaults to all registered models.
-    """
+    """Models vote on a question. Returns tally, majority, agreement %."""
     opts = options or ["yes", "no"]
     target_ids = models if models else list(MODELS.keys())
     for mid in target_ids:
@@ -407,17 +372,7 @@ async def consensus(
     models: list[str] | None = None,
     judge_model: str | None = None,
 ) -> ConsensusResult:
-    """Gather parallel responses then synthesize a consensus via a judge model.
-
-    Phase 1: Swarm the prompt to N models in parallel.
-    Phase 2: Feed all responses to a judge model to identify agreement,
-    disagreement, and produce a unified answer.
-
-    Args:
-        prompt: The question or topic.
-        models: Models for phase 1. Defaults to all registered models.
-        judge_model: Model for synthesis. Defaults to kimi-k2-thinking:cloud.
-    """
+    """Swarm then judge-synthesize into a unified answer."""
     judge = judge_model or DEFAULT_JUDGE
     target_ids = models if models else list(MODELS.keys())
     for mid in target_ids:
@@ -469,17 +424,7 @@ async def code_review(
     review_models: list[str] | None = None,
     merge_model: str | None = None,
 ) -> CodeReviewResult:
-    """Get parallel expert code reviews merged into a single report.
-
-    Multiple reviewer models analyze the code independently, then a merger
-    model deduplicates and sorts findings by severity.
-
-    Args:
-        code: The code to review.
-        language: Programming language (for context). Optional.
-        review_models: Reviewer model IDs. Defaults to code-specialist models.
-        merge_model: Model to merge reviews. Defaults to kimi-k2-thinking:cloud.
-    """
+    """Parallel code reviews merged and sorted by severity."""
     reviewers = review_models or CODE_MODELS
     merger = merge_model or DEFAULT_JUDGE
     for mid in reviewers:
@@ -537,15 +482,7 @@ async def multi_solve(
     language: str | None = None,
     models: list[str] | None = None,
 ) -> MultiSolveResult:
-    """Get multiple independent solutions to a coding problem.
-
-    Each model produces a complete, working solution with brief comments.
-
-    Args:
-        problem: The problem statement.
-        language: Target programming language. Optional.
-        models: Model IDs to use. Defaults to code + reasoning category models.
-    """
+    """Multiple models solve the same problem independently."""
     target_ids = models or (
         _pick_models_by_category(["code", "reasoning"])
         + ["qwen3-next:80b-cloud", "gpt-oss:120b-cloud"]
@@ -596,15 +533,7 @@ async def benchmark(
     prompts: list[str],
     models: list[str] | None = None,
 ) -> BenchmarkResult:
-    """Run a prompt x model matrix benchmark with parallel execution.
-
-    Every prompt is sent to every model. Returns a structured matrix with
-    per-model average latency statistics.
-
-    Args:
-        prompts: List of prompts to benchmark.
-        models: List of model IDs. Defaults to all registered models.
-    """
+    """Prompt x model matrix. Returns per-model latency stats."""
     target_ids = models if models else list(MODELS.keys())
     for mid in target_ids:
         get_model(mid)
@@ -661,16 +590,7 @@ async def rank(
     models: list[str] | None = None,
     judge_count: int = 3,
 ) -> RankResult:
-    """Peer-evaluate model responses to produce a scored leaderboard.
-
-    Phase 1: All target models answer the prompt in parallel.
-    Phase 2: Randomly selected judges score each answer 1-10.
-
-    Args:
-        prompt: The question or task for models to answer.
-        models: Model IDs to rank. Defaults to 5 diverse models.
-        judge_count: Number of judges per answer. Defaults to 3.
-    """
+    """Models answer, then peer-judge each other 1-10. Returns leaderboard."""
     target_ids = models or RANK_DEFAULT_MODELS
     for mid in target_ids:
         get_model(mid)
@@ -753,15 +673,7 @@ async def chain(
     pipeline: list[str],
     pass_context: bool = True,
 ) -> ChainResult:
-    """Run a sequential model pipeline where each model builds on the previous.
-
-    The output of model N is fed as context to model N+1.
-
-    Args:
-        prompt: The initial question or task.
-        pipeline: Ordered list of model IDs forming the chain.
-        pass_context: If True, each step sees ALL prior steps (not just the last).
-    """
+    """Sequential pipeline — each model builds on prior outputs."""
     for mid in pipeline:
         get_model(mid)
 
@@ -823,17 +735,7 @@ async def map_reduce(
     reducer_model: str | None = None,
     reduce_prompt: str | None = None,
 ) -> MapReduceResult:
-    """Fan-out a prompt to multiple models, then fan-in with a reducer.
-
-    Unlike consensus (which finds agreement/disagreement), map_reduce
-    combines all information into a comprehensive synthesis.
-
-    Args:
-        prompt: The question or task for mappers.
-        mapper_models: Models for the map phase. Defaults to all registered.
-        reducer_model: Model for the reduce phase. Defaults to kimi-k2-thinking:cloud.
-        reduce_prompt: Custom instruction for the reducer. Optional.
-    """
+    """Fan-out to models, fan-in with a reducer. Custom reduce_prompt supported."""
     mappers = mapper_models if mapper_models else list(MODELS.keys())
     reducer = reducer_model or DEFAULT_JUDGE
     for mid in mappers:
@@ -886,15 +788,7 @@ async def blind_taste_test(
     prompt: str,
     count: int = 3,
 ) -> BlindTasteResult:
-    """Anonymous model comparison with randomized presentation order.
-
-    Randomly selects models, shuffles their responses into labeled
-    "Response A", "Response B", etc., and provides a reveal mapping.
-
-    Args:
-        prompt: The question or task.
-        count: Number of models to include. Defaults to 3.
-    """
+    """Anonymous A/B/C comparison. Reveal mapping shows which model was which."""
     all_ids = list(MODELS.keys())
     count = min(count, len(all_ids))
 
@@ -943,17 +837,7 @@ async def contrarian(
     thesis_model: str | None = None,
     antithesis_model: str | None = None,
 ) -> ContrarianResult:
-    """Generate a thesis and a substantive devil's-advocate antithesis.
-
-    Phase 1: thesis_model answers the prompt normally.
-    Phase 2: antithesis_model challenges the thesis — finding logical gaps,
-    questioning assumptions, and arguing alternatives.
-
-    Args:
-        prompt: The question or claim to examine.
-        thesis_model: Model for the initial answer. Defaults to qwen3-next:80b-cloud.
-        antithesis_model: Model for the counterargument. Defaults to deepseek-v3.2:cloud.
-    """
+    """Thesis then devil's-advocate antithesis. Challenges assumptions."""
     t_model = thesis_model or "qwen3-next:80b-cloud"
     a_model = antithesis_model or "deepseek-v3.2:cloud"
     get_model(t_model)
