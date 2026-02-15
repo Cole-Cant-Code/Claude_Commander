@@ -5,8 +5,8 @@ useful patterns — debates, voting, code review, benchmarks, and more.
 
 ## What it does
 
-Claude Commander sits between your MCP client (Claude Code, etc.) and an Ollama
-instance running cloud-proxied models. It exposes 15 tools:
+Claude Commander sits between your MCP client (Claude Code, Codex, etc.) and an
+Ollama instance running cloud-proxied models. It exposes 15 tools:
 
 **Primitives**
 
@@ -60,10 +60,10 @@ uv sync --extra dev
 export OLLAMA_BASE_URL="http://your-ollama-host:11434"
 ```
 
-### Add to Claude Code
+### Claude Code
 
 ```bash
-claude mcp add claude-commander -- uv run --project /path/to/Claude_Commander fastmcp run src/claude_commander/server.py
+claude mcp add claude-commander -- uv run --project /path/to/Claude_Commander fastmcp run claude_commander.server:mcp
 ```
 
 Or add directly to `~/.claude.json`:
@@ -73,11 +73,29 @@ Or add directly to `~/.claude.json`:
   "mcpServers": {
     "claude-commander": {
       "command": "uv",
-      "args": ["run", "--project", "/path/to/Claude_Commander", "fastmcp", "run", "src/claude_commander/server.py"]
+      "args": ["run", "--project", "/path/to/Claude_Commander", "fastmcp", "run", "claude_commander.server:mcp"],
+      "env": { "OLLAMA_BASE_URL": "http://your-ollama-host:11434" }
     }
   }
 }
 ```
+
+Agent instructions: see [`CLAUDE.md`](CLAUDE.md)
+
+### Codex
+
+Add to `~/.codex/config.toml`:
+
+```toml
+[mcp_servers.claude-commander]
+command = "uv"
+args = ["run", "--project", "/path/to/Claude_Commander", "fastmcp", "run", "claude_commander.server:mcp"]
+
+[mcp_servers.claude-commander.env]
+OLLAMA_BASE_URL = "http://your-ollama-host:11434"
+```
+
+Agent instructions: see [`AGENTS.md`](AGENTS.md)
 
 ## Usage examples
 
@@ -227,18 +245,22 @@ alternatives — substantively, not for its own sake.
 ## Project structure
 
 ```
+CLAUDE.md                        # Agent instructions for Claude Code
+AGENTS.md                        # Agent instructions for Codex
+
 src/claude_commander/
-  __init__.py          # version
-  registry.py          # 13-model catalog
-  ollama.py            # async HTTP client (aiohttp)
-  models.py            # Pydantic result types
-  server.py            # FastMCP tools + orchestration logic
+  __init__.py                    # version
+  registry.py                    # 13-model catalog with strengths + categories
+  ollama.py                      # async HTTP client (aiohttp)
+  models.py                      # Pydantic result types
+  profile_store.py               # reusable profile persistence
+  server.py                      # FastMCP tools + orchestration logic
 
 tests/
-  test_registry.py     # model catalog tests
-  test_ollama.py       # HTTP client tests (mocked)
-  test_server.py       # original 4 tools (mocked)
-  test_advanced.py     # 11 orchestration tools + helpers (mocked)
+  test_registry.py               # model catalog tests
+  test_ollama.py                 # HTTP client tests (mocked)
+  test_server.py                 # original 4 tools (mocked)
+  test_advanced.py               # 11 orchestration tools + helpers (mocked)
 ```
 
 ## Tests
