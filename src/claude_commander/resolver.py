@@ -5,7 +5,6 @@ from __future__ import annotations
 from typing import Any
 
 from claude_commander.profile_store import get_profile_store
-from claude_commander.registry import MODELS
 
 # Sentinel: "caller did not provide this kwarg"
 _UNSET = object()

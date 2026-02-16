@@ -1,6 +1,6 @@
 """Tests for verification & anti-slop tools + helper functions (mocked Ollama)."""
 
-from unittest.mock import AsyncMock, patch
+from unittest.mock import patch
 
 import pytest
 

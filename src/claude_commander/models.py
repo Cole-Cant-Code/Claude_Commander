@@ -21,6 +21,32 @@ class CallResult(BaseModel):
     warnings: list[str] = Field(default_factory=list)
 
 
+class AutoCallResult(BaseModel):
+    """Result of automatic model routing with fallback attempts."""
+
+    prompt_snippet: str = ""
+    requested_task: str = "auto"
+    resolved_task: str = "general"
+    strategy: str = "balanced"
+    routing_profile: str = "default"
+    routing_source: str = "builtin"
+    routing_warnings: list[str] = Field(default_factory=list)
+    candidate_models: list[str] = Field(default_factory=list)
+    attempted_models: list[str] = Field(default_factory=list)
+    selected_model: str = ""
+    fallback_used: bool = False
+    budget_ms: int | None = None
+    budget_exhausted: bool = False
+    result: CallResult = Field(
+        default_factory=lambda: CallResult(
+            model="",
+            status="error",
+            error="No model attempts were made.",
+        )
+    )
+    total_elapsed_seconds: float = 0.0
+
+
 class SwarmResult(BaseModel):
     """Aggregated results from a parallel swarm call."""
 

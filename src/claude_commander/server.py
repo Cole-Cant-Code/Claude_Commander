@@ -4,16 +4,19 @@ from __future__ import annotations
 
 import asyncio
 import hashlib
+import json
 import os
 import random
 import re
 import time
+from pathlib import Path
 from typing import Any
 
 from fastmcp import FastMCP
 
 from claude_commander import __version__
 from claude_commander.models import (
+    AutoCallResult,
     BenchmarkCell,
     BenchmarkResult,
     BlindResponse,
@@ -66,6 +69,7 @@ a `model` parameter also accepts a profile name (run `list_profiles` to see them
 
 WHEN TO USE WHICH TOOL:
 - Need one second opinion? → call_model
+- Need automatic routing + fallback? → auto_call
 - Need broad coverage? → swarm (6 by default, count=13 for all), consensus (swarm + judge synthesis)
 - Need to stress-test content? → red_team (iterative attacker/defender)
 - Need a quality checkpoint? → quality_gate (pass/fail against criteria)
@@ -113,6 +117,7 @@ raw model registry.
 | Tool | What it does | When to reach for it |
 |------|-------------|---------------------|
 | `call_model` | Single model/profile call | Targeted second opinion on a specific question |
+| `auto_call` | Auto-route to best-fit model with fallback retries | Quick "pick-for-me" calls with resilience |
 | `swarm` | Fan-out to models in parallel (6 default, count=13 for all) | Broad coverage, seeing how many models agree |
 | `consensus` | Swarm + judge synthesizes a unified answer | Complex open-ended questions needing a single answer |
 | `chain` | Sequential pipeline — each model builds on prior output | Iterative refinement across different model strengths |
@@ -273,6 +278,8 @@ high scores elsewhere.
 "minor" but another says "major" for the same signal type, the result uses "major".
 - All tools accept profile names wherever model IDs are expected. Create custom profiles \
 with `create_profile` to save your preferred configurations.
+- `auto_call` supports `max_time_ms` and config-driven routing profiles from \
+`CLAUDE_COMMANDER_ROUTING_CONFIG` (default: `~/.claude-commander/auto_routing.json`).
 """
 
 
@@ -307,6 +314,45 @@ DEFAULT_SWARM_MODELS = [
     "qwen3-vl:235b-cloud",       # vision
 ]
 
+AUTO_TASKS = {"general", "code", "reasoning", "creative", "verification", "vision"}
+AUTO_STRATEGIES = {"fast", "balanced", "quality"}
+AUTO_ROUTING_CONFIG_ENV = "CLAUDE_COMMANDER_ROUTING_CONFIG"
+AUTO_ROUTING_DEFAULT_PATH = Path.home() / ".claude-commander" / "auto_routing.json"
+AUTO_ROUTING_DEFAULT_PROFILE = "default"
+
+AUTO_ROUTING_DEFAULTS: dict[str, dict[str, list[str]]] = {
+    "general": {
+        "fast": ["gpt-oss:20b-cloud", "glm-4.7:cloud", "kimi-k2.5:cloud"],
+        "balanced": ["glm-5:cloud", "qwen3-next:80b-cloud", "gpt-oss:120b-cloud"],
+        "quality": ["gpt-oss:120b-cloud", "glm-5:cloud", "deepseek-v3.2:cloud"],
+    },
+    "code": {
+        "fast": ["qwen3-coder-next:cloud", "glm-4.7:cloud", "gpt-oss:20b-cloud"],
+        "balanced": ["qwen3-coder-next:cloud", "deepseek-v3.2:cloud", "gpt-oss:120b-cloud"],
+        "quality": ["qwen3-coder-next:cloud", "deepseek-v3.2:cloud", "kimi-k2-thinking:cloud"],
+    },
+    "reasoning": {
+        "fast": ["glm-5:cloud", "qwen3-next:80b-cloud", "kimi-k2.5:cloud"],
+        "balanced": ["deepseek-v3.2:cloud", "kimi-k2-thinking:cloud", "glm-5:cloud"],
+        "quality": ["deepseek-v3.2:cloud", "kimi-k2-thinking:cloud", "gpt-oss:120b-cloud"],
+    },
+    "creative": {
+        "fast": ["gpt-oss:20b-cloud", "kimi-k2.5:cloud", "glm-4.7:cloud"],
+        "balanced": ["glm-5:cloud", "qwen3-next:80b-cloud", "gpt-oss:120b-cloud"],
+        "quality": ["glm-5:cloud", "qwen3-next:80b-cloud", "kimi-k2-thinking:cloud"],
+    },
+    "verification": {
+        "fast": ["glm-4.7:cloud", "gpt-oss:20b-cloud", "kimi-k2.5:cloud"],
+        "balanced": ["deepseek-v3.2:cloud", "gpt-oss:120b-cloud", "kimi-k2-thinking:cloud"],
+        "quality": ["deepseek-v3.2:cloud", "kimi-k2-thinking:cloud", "gpt-oss:120b-cloud"],
+    },
+    "vision": {
+        "fast": ["qwen3-vl:235b-instruct-cloud", "qwen3-vl:235b-cloud", "glm-4.7:cloud"],
+        "balanced": ["qwen3-vl:235b-cloud", "qwen3-vl:235b-instruct-cloud", "glm-5:cloud"],
+        "quality": ["qwen3-vl:235b-cloud", "qwen3-vl:235b-instruct-cloud", "deepseek-v3.2:cloud"],
+    },
+}
+
 
 # ---------------------------------------------------------------------------
 # Helper functions
@@ -333,6 +379,158 @@ def _truncate_result(r: CallResult, limit: int = TRUNCATE_LEN) -> CallResult:
         tags=r.tags,
         warnings=r.warnings,
     )
+
+
+def _dedupe_keep_order(items: list[str]) -> list[str]:
+    seen: set[str] = set()
+    out: list[str] = []
+    for item in items:
+        if item not in seen:
+            seen.add(item)
+            out.append(item)
+    return out
+
+
+def _copy_routing_table(table: dict[str, dict[str, list[str]]]) -> dict[str, dict[str, list[str]]]:
+    return {
+        task: {strategy: list(candidates) for strategy, candidates in strategies.items()}
+        for task, strategies in table.items()
+    }
+
+
+def _normalize_candidates(raw: Any) -> list[str]:
+    if not isinstance(raw, list):
+        return []
+    candidates = [item.strip() for item in raw if isinstance(item, str) and item.strip()]
+    return _dedupe_keep_order(candidates)
+
+
+def _merge_routing_table(
+    base: dict[str, dict[str, list[str]]],
+    override: Any,
+) -> dict[str, dict[str, list[str]]]:
+    merged = _copy_routing_table(base)
+    if not isinstance(override, dict):
+        return merged
+
+    for task, strategies in override.items():
+        if task not in AUTO_TASKS or not isinstance(strategies, dict):
+            continue
+        for strategy, raw_candidates in strategies.items():
+            if strategy not in AUTO_STRATEGIES:
+                continue
+            candidates = _normalize_candidates(raw_candidates)
+            if candidates:
+                merged[task][strategy] = candidates
+    return merged
+
+
+def _load_routing_profiles() -> tuple[dict[str, dict[str, dict[str, list[str]]]], str, str, list[str]]:
+    warnings: list[str] = []
+    config_path = Path(os.getenv(AUTO_ROUTING_CONFIG_ENV, str(AUTO_ROUTING_DEFAULT_PATH))).expanduser()
+    builtin_profiles = {AUTO_ROUTING_DEFAULT_PROFILE: _copy_routing_table(AUTO_ROUTING_DEFAULTS)}
+
+    if not config_path.exists():
+        return builtin_profiles, AUTO_ROUTING_DEFAULT_PROFILE, "builtin", warnings
+
+    try:
+        raw = json.loads(config_path.read_text())
+    except Exception as exc:
+        warnings.append(f"Failed to read routing config at {config_path}: {exc}")
+        return builtin_profiles, AUTO_ROUTING_DEFAULT_PROFILE, f"file:{config_path}", warnings
+
+    if not isinstance(raw, dict):
+        warnings.append(f"Routing config at {config_path} must be a JSON object.")
+        return builtin_profiles, AUTO_ROUTING_DEFAULT_PROFILE, f"file:{config_path}", warnings
+
+    if "profiles" in raw:
+        raw_profiles = raw.get("profiles")
+        default_profile = raw.get("default_profile", AUTO_ROUTING_DEFAULT_PROFILE)
+    else:
+        raw_profiles = {AUTO_ROUTING_DEFAULT_PROFILE: raw}
+        default_profile = AUTO_ROUTING_DEFAULT_PROFILE
+
+    if not isinstance(raw_profiles, dict) or not raw_profiles:
+        warnings.append(f"Routing config at {config_path} has no valid 'profiles' mapping.")
+        return builtin_profiles, AUTO_ROUTING_DEFAULT_PROFILE, f"file:{config_path}", warnings
+
+    profiles: dict[str, dict[str, dict[str, list[str]]]] = {}
+    for name, profile_raw in raw_profiles.items():
+        if not isinstance(name, str) or not name.strip():
+            continue
+        profiles[name.strip()] = _merge_routing_table(AUTO_ROUTING_DEFAULTS, profile_raw)
+
+    if not profiles:
+        warnings.append(f"Routing config at {config_path} had no usable profiles; using builtin defaults.")
+        return builtin_profiles, AUTO_ROUTING_DEFAULT_PROFILE, f"file:{config_path}", warnings
+
+    if not isinstance(default_profile, str) or default_profile not in profiles:
+        fallback = sorted(profiles)[0]
+        warnings.append(
+            f"default_profile '{default_profile}' not found; using '{fallback}' instead."
+        )
+        default_profile = fallback
+
+    return profiles, default_profile, f"file:{config_path}", warnings
+
+
+def _resolve_routing_profile(
+    routing_profile: str | None,
+) -> tuple[dict[str, dict[str, list[str]]], str, str, list[str]]:
+    profiles, default_profile, source, warnings = _load_routing_profiles()
+    if routing_profile is None:
+        selected = default_profile
+    else:
+        selected = routing_profile.strip()
+        if not selected:
+            raise ValueError("routing_profile cannot be empty.")
+        if selected not in profiles:
+            known = ", ".join(sorted(profiles))
+            raise ValueError(f"Unknown routing_profile '{routing_profile}'. Available: {known}")
+
+    return profiles[selected], selected, source, warnings
+
+
+def _infer_auto_task(prompt: str, system_prompt: str | None = None) -> str:
+    text = f"{system_prompt or ''}\n{prompt}".lower()
+
+    if any(k in text for k in ("image", "photo", "screenshot", "diagram", "ocr", "vision")):
+        return "vision"
+    if any(
+        k in text for k in (
+            "code",
+            "function",
+            "bug",
+            "debug",
+            "refactor",
+            "unit test",
+            "stack trace",
+            "python",
+            "typescript",
+            "javascript",
+            "rust",
+            "java",
+            "sql",
+        )
+    ):
+        return "code"
+    if any(
+        k in text for k in (
+            "fact-check",
+            "fact check",
+            "verify",
+            "citation",
+            "source",
+            "accuracy",
+            "hallucination",
+        )
+    ):
+        return "verification"
+    if any(k in text for k in ("story", "poem", "creative", "brainstorm", "tagline")):
+        return "creative"
+    if any(k in text for k in ("analyze", "prove", "reason", "tradeoff", "derive", "theorem")):
+        return "reasoning"
+    return "general"
 
 
 def _extract_vote(response: str, options: list[str]) -> tuple[str, str]:
@@ -645,6 +843,156 @@ async def call_model(
 
 
 @mcp.tool()
+async def auto_call(
+    prompt: str,
+    task: str = "auto",
+    strategy: str = "balanced",
+    routing_profile: str | None = None,
+    models: list[str] | None = None,
+    max_attempts: int = 3,
+    max_time_ms: int | None = None,
+    system_prompt: str | None = None,
+    temperature: float = 0.7,
+    top_p: float = 0.9,
+    max_tokens: int = 4096,
+    response_format: str | dict[str, Any] | None = None,
+    role_label: str = "",
+    tags: list[str] | None = None,
+) -> AutoCallResult:
+    """Auto-route prompt to best-fit model/profile, retrying with fallbacks on failure."""
+    requested_task = task.lower().strip()
+    strategy_name = strategy.lower().strip()
+    if max_attempts < 1:
+        raise ValueError("max_attempts must be >= 1.")
+    if max_time_ms is not None and max_time_ms < 1:
+        raise ValueError("max_time_ms must be >= 1 when provided.")
+    if models is not None and routing_profile is not None:
+        raise ValueError("routing_profile cannot be used together with explicit models override.")
+    if strategy_name not in AUTO_STRATEGIES:
+        allowed = ", ".join(sorted(AUTO_STRATEGIES))
+        raise ValueError(f"Unknown strategy '{strategy}'. Allowed: {allowed}")
+
+    resolved_task = _infer_auto_task(prompt, system_prompt) if requested_task == "auto" else requested_task
+    if resolved_task not in AUTO_TASKS:
+        allowed = ", ".join(["auto", *sorted(AUTO_TASKS)])
+        raise ValueError(f"Unknown task '{task}'. Allowed: {allowed}")
+
+    routing_source = "manual_override"
+    effective_routing_profile = "manual_override"
+    routing_warnings: list[str] = []
+    if models is not None:
+        if not models:
+            raise ValueError("If provided, models must contain at least one model/profile name.")
+        candidate_names = _dedupe_keep_order(models)
+    else:
+        routing_table, effective_routing_profile, routing_source, routing_warnings = (
+            _resolve_routing_profile(routing_profile)
+        )
+        candidate_names = _dedupe_keep_order(routing_table[resolved_task][strategy_name])
+
+    for name in candidate_names:
+        _resolve_model(name)
+
+    attempts = candidate_names[:max_attempts]
+    start = time.monotonic()
+    attempted_models: list[str] = []
+    failure_notes: list[str] = []
+    last_result: CallResult | None = None
+    budget_exhausted = False
+
+    for name in attempts:
+        timeout_override: object = _UNSET
+        if max_time_ms is not None:
+            elapsed_ms = (time.monotonic() - start) * 1000.0
+            if elapsed_ms >= max_time_ms:
+                budget_exhausted = True
+                failure_notes.append(
+                    f"Budget exhausted before attempting '{name}' ({int(elapsed_ms)}ms elapsed)."
+                )
+                break
+            remaining_ms = max_time_ms - elapsed_ms
+            timeout_override = max(1, int(remaining_ms / 1000))
+
+        result = await _call_resolved(
+            name,
+            prompt,
+            system_prompt=system_prompt if system_prompt is not None else _UNSET,
+            temperature=temperature,
+            top_p=top_p,
+            max_tokens=max_tokens,
+            timeout_seconds=timeout_override,
+            response_format=response_format if response_format is not None else _UNSET,
+            role_label=role_label,
+            tags=tags if tags is not None else _UNSET,
+        )
+        last_result = result
+        attempted_models.append(result.model)
+        if result.status == "ok" and result.content.strip():
+            total_elapsed = round(time.monotonic() - start, 2)
+            return AutoCallResult(
+                prompt_snippet=prompt[:500],
+                requested_task=requested_task,
+                resolved_task=resolved_task,
+                strategy=strategy_name,
+                routing_profile=effective_routing_profile,
+                routing_source=routing_source,
+                routing_warnings=routing_warnings,
+                candidate_models=attempts,
+                attempted_models=attempted_models,
+                selected_model=result.model,
+                fallback_used=len(attempted_models) > 1,
+                budget_ms=max_time_ms,
+                budget_exhausted=False,
+                result=result,
+                total_elapsed_seconds=total_elapsed,
+            )
+
+        reason = result.error or "empty content"
+        failure_notes.append(f"{result.model}: {reason}")
+
+    total_elapsed = round(time.monotonic() - start, 2)
+    failed_model = attempted_models[-1] if attempted_models else ""
+    error_msg = (
+        "auto_call stopped due to max_time_ms budget before a successful response."
+        if budget_exhausted
+        else "All auto_call attempts failed."
+    )
+    failure_result = CallResult(
+        model=failed_model,
+        status="error",
+        error=error_msg,
+        warnings=failure_notes,
+    )
+    if last_result is not None:
+        failure_result.content = last_result.content
+        failure_result.thinking = last_result.thinking
+        failure_result.elapsed_seconds = last_result.elapsed_seconds
+        failure_result.role_label = last_result.role_label
+        failure_result.tags = last_result.tags
+        failure_result.warnings = _dedupe_keep_order(last_result.warnings + routing_warnings + failure_notes)
+    else:
+        failure_result.warnings = _dedupe_keep_order(routing_warnings + failure_notes)
+
+    return AutoCallResult(
+        prompt_snippet=prompt[:500],
+        requested_task=requested_task,
+        resolved_task=resolved_task,
+        strategy=strategy_name,
+        routing_profile=effective_routing_profile,
+        routing_source=routing_source,
+        routing_warnings=routing_warnings,
+        candidate_models=attempts,
+        attempted_models=attempted_models,
+        selected_model="",
+        fallback_used=len(attempted_models) > 1,
+        budget_ms=max_time_ms,
+        budget_exhausted=budget_exhausted,
+        result=failure_result,
+        total_elapsed_seconds=total_elapsed,
+    )
+
+
+@mcp.tool()
 async def swarm(
     prompt: str,
     models: list[str] | None = None,
@@ -797,7 +1145,6 @@ async def vote(
         async with sem:
             return await _call_resolved(name, prompt, system_prompt=system)
 
-    start = time.monotonic()
     results = list(await asyncio.gather(*[_bounded(mid) for mid in target_ids]))
 
     votes: list[Vote] = []
@@ -826,7 +1173,6 @@ async def vote(
     majority_count = tally.get(majority, 0)
     agreement_pct = round(majority_count / len(target_ids) * 100, 1) if target_ids else 0.0
 
-    total_elapsed = round(time.monotonic() - start, 2)
     return VoteResult(
         prompt=prompt,
         votes=votes,

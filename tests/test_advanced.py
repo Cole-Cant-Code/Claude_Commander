@@ -1,6 +1,6 @@
 """Tests for the 11 advanced MCP tools + helper functions (mocked Ollama)."""
 
-from unittest.mock import AsyncMock, patch
+from unittest.mock import patch
 
 import pytest
 

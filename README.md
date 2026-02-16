@@ -6,13 +6,14 @@ useful patterns — debates, voting, code review, benchmarks, and more.
 ## What it does
 
 Claude Commander sits between your MCP client (Claude Code, Codex, etc.) and an
-Ollama instance running cloud-proxied models. It exposes 15 tools:
+Ollama instance running cloud-proxied models. It exposes 16 tools:
 
 **Primitives**
 
 | Tool | What it does |
 |---|---|
 | `call_model` | Call a single model |
+| `auto_call` | Auto-route to a best-fit model, with fallback retries |
 | `swarm` | Call multiple models in parallel |
 | `list_models` | Show registered models + availability |
 | `health_check` | Check Ollama connectivity |
@@ -149,6 +150,11 @@ These are MCP tool calls. Your client (Claude Code, Codex, Gemini, Kimi, etc.) i
 debate(prompt="Is Rust better than Go?", rounds=3)
 ```
 
+**Auto call** — route + fallback in one call:
+```
+auto_call(prompt="Review this Python function for bugs", task="code", strategy="quality")
+```
+
 **Vote** — ask all models a yes/no question:
 ```
 vote(prompt="Is the sky blue?")
@@ -179,6 +185,52 @@ blind_taste_test(prompt="Explain monads", count=4)
 ```
 
 ## Tool details
+
+### auto_call
+
+```
+auto_call(
+  prompt,
+  task="auto",
+  strategy="balanced",
+  routing_profile?,
+  models?,
+  max_attempts=3,
+  max_time_ms?,
+  ...
+)
+```
+
+Automatically routes the prompt to a best-fit model (or profile) and retries
+with ordered fallbacks if the first attempt errors or returns empty content.
+Tasks: `auto`, `general`, `code`, `reasoning`, `creative`, `verification`, `vision`.
+Strategies: `fast`, `balanced`, `quality`.
+
+`max_time_ms` applies a total wall-clock budget for all attempts. If budget runs
+out, `auto_call` stops and returns an error with `budget_exhausted=true`.
+
+Routing can be config-driven via `CLAUDE_COMMANDER_ROUTING_CONFIG`
+(defaults to `~/.claude-commander/auto_routing.json`). Optional format:
+
+```json
+{
+  "default_profile": "default",
+  "profiles": {
+    "default": {
+      "code": {
+        "balanced": ["qwen3-coder-next:cloud", "deepseek-v3.2:cloud"]
+      }
+    },
+    "fast-local": {
+      "general": {
+        "fast": ["glm-4.7:cloud", "gpt-oss:20b-cloud"]
+      }
+    }
+  }
+}
+```
+
+Select a profile at runtime with `routing_profile="fast-local"`.
 
 ### debate
 
@@ -311,7 +363,7 @@ tests/
 uv run pytest tests/ -v
 ```
 
-79 tests, all mocked at the `call_ollama` boundary — no Ollama instance needed.
+209 tests, all mocked at the `call_ollama` boundary — no Ollama instance needed.
 
 ## Dependencies
 
