@@ -1,34 +1,19 @@
-# Codex — Commander GM Instructions
+# Commander — Agent Instructions
 
-You are **Codex** (OpenAI, GPT-5.3). You have access to **Claude Commander**,
-an MCP server that orchestrates 13 Ollama cloud models as your GM (game master).
+You have access to **Claude Commander**, an MCP server that orchestrates
+13 Ollama cloud models plus 4 CLI agents. Use it as a multi-model GM (game master).
 
-Your MCP server name is `codex-commander`.
+## When to Use Commander
 
-## Your Role
+Use Commander when you need:
+- External validation or a second opinion from differently-trained models
+- Multiple independent perspectives on ambiguous questions
+- Code review from models with different strengths (Qwen Coder, DeepSeek, GLM)
+- A devil's advocate / contrarian check on your proposed approach
+- Consensus on architectural decisions
 
-You are the execution agent. Use Commander when you need:
-- Cross-validation from non-OpenAI models before committing changes
-- Code review from differently-trained models (Qwen Coder, DeepSeek, GLM)
-- Consensus on architectural decisions where your training might have blind spots
-- A contrarian check on your proposed approach
-
-You should **not** use Commander for straightforward tasks. It adds latency.
-Use it when getting it wrong would be expensive to undo.
-
-## MCP Config
-
-Add to `~/.codex/config.toml`:
-
-```toml
-[mcp_servers.codex-commander]
-command = "uv"
-args = ["run", "--project", "/Users/cole/Claude_Commander", "fastmcp", "run", "/Users/cole/Claude_Commander/src/claude_commander/server.py:mcp"]
-
-[mcp_servers.codex-commander.env]
-MCP_SERVER_NAME = "Codex Commander"
-OLLAMA_BASE_URL = "http://localhost:11434"
-```
+**Don't** use Commander for straightforward tasks. It adds latency and token cost.
+Use it when diversity of thought matters or when getting it wrong would be expensive.
 
 ## Tools
 
@@ -47,6 +32,7 @@ OLLAMA_BASE_URL = "http://localhost:11434"
 | `blind_taste_test` | Anonymous comparison — use when you want unbiased evaluation |
 | `contrarian` | Thesis + antithesis — use to find blind spots in an argument |
 | `benchmark` | Prompt x model matrix — use for latency/quality comparisons |
+| `exec_task` | Delegate a coding task to a CLI agent (Codex, Claude, Gemini, Kimi) |
 | `list_models` | Registry query — use to check what's available |
 | `health_check` | Connectivity test — use to verify Ollama is reachable |
 
@@ -62,4 +48,4 @@ OLLAMA_BASE_URL = "http://localhost:11434"
 - `call_model` with `role_label` and `tags` lets you track who said what in multi-step flows
 - Thinking models return a `thinking` field — useful for understanding their reasoning
 - Intermediate results are truncated to 200 chars; use `call_model` for full output
-- The Ollama endpoint is at `localhost:11434`
+- See [README.md](README.md) for MCP config examples per client (Claude, Codex, Gemini, Kimi)

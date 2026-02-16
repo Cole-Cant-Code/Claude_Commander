@@ -60,11 +60,11 @@ uv sync --extra dev
 export OLLAMA_BASE_URL="http://your-ollama-host:11434"
 ```
 
-### Claude Code — primary reasoning agent
+Agent instructions (for any client): [`AGENTS.md`](AGENTS.md)
 
-Server name: `claude-commander` | Instructions: [`CLAUDE.md`](CLAUDE.md)
+### Claude Code
 
-Use Commander for external validation, diverse perspectives, and contrarian checks.
+Server name: `claude-commander`
 
 ```bash
 claude mcp add claude-commander -- uv run --project /path/to/Claude_Commander fastmcp run /path/to/Claude_Commander/src/claude_commander/server.py:mcp
@@ -84,11 +84,9 @@ Or add to `~/.claude.json`:
 }
 ```
 
-### Codex — execution agent
+### Codex
 
-Server name: `codex-commander` | Instructions: [`AGENTS.md`](AGENTS.md)
-
-Use Commander for cross-validation from non-OpenAI models before committing changes.
+Server name: `codex-commander`
 
 Add to `~/.codex/config.toml`:
 
@@ -290,8 +288,7 @@ alternatives — substantively, not for its own sake.
 ## Project structure
 
 ```
-CLAUDE.md                        # Agent instructions for Claude Code
-AGENTS.md                        # Agent instructions for Codex
+AGENTS.md                        # Agent instructions (any MCP client)
 
 src/claude_commander/
   __init__.py                    # version

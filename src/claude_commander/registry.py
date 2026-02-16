@@ -119,7 +119,7 @@ MODELS: dict[str, ModelInfo] = {
             category="cli",
             strengths=["code generation", "reasoning", "multimodal", "search"],
             is_cli=True,
-            cli_command=["gemini", "-p", "{prompt}", "-o", "text"],
+            cli_command=["gemini", "-p", "{prompt}", "-o", "text", "--yolo"],
         ),
         ModelInfo(
             model_id="codex:cli",
@@ -135,7 +135,7 @@ MODELS: dict[str, ModelInfo] = {
             category="cli",
             strengths=["code generation", "agentic execution", "tool use"],
             is_cli=True,
-            cli_command=["kimi", "--print", "-p", "{prompt}"],
+            cli_command=["kimi", "--print", "--final-message-only", "-p", "{prompt}"],
         ),
     ]
 }
