@@ -13,6 +13,14 @@ from claude_commander.registry import MODELS
 
 OLLAMA_BASE_URL = os.environ.get("OLLAMA_BASE_URL", "http://localhost:11434")
 
+# Some Ollama-compatible backends emit "thinking" tokens that can consume the
+# entire `num_predict` budget, leaving an empty `message.content`. To keep MCP
+# semantics reliable, we do a single automatic retry with a larger `num_predict`
+# when the backend reports thinking but returns empty content on HTTP 200.
+_EMPTY_CONTENT_RETRY_ATTEMPTS = 2
+_EMPTY_CONTENT_RETRY_BUMP = 256
+_EMPTY_CONTENT_RETRY_MIN_PREDICT = 128
+
 
 async def call_ollama(
     model: str,
@@ -40,42 +48,90 @@ async def call_ollama(
         })
     messages.append({"role": "user", "content": prompt})
 
-    payload: dict[str, Any] = {
-        "model": model,
-        "stream": False,
-        "messages": messages,
-        "options": {
-            "temperature": temperature,
-            "top_p": top_p,
-            "num_predict": max_tokens,
-        },
-    }
-    if response_format is not None:
-        payload["format"] = response_format
-
     start = time.monotonic()
     try:
-        async with (
-            aiohttp.ClientSession() as session,
-            session.post(
-                f"{OLLAMA_BASE_URL}/api/chat",
-                json=payload,
-                timeout=aiohttp.ClientTimeout(total=timeout_seconds),
-            ) as resp,
-        ):
-            raw = await resp.json()
+        warnings: list[str] = []
+        content = ""
+        thinking = None
+        last_status = 0
+        last_num_predict = max_tokens
 
-        msg = raw.get("message", {})
-        content = msg.get("content", "")
-        thinking = msg.get("thinking", None)
+        async with aiohttp.ClientSession() as session:
+            for attempt in range(1, _EMPTY_CONTENT_RETRY_ATTEMPTS + 1):
+                num_predict = max_tokens
+                if attempt > 1:
+                    # Give the backend enough room to emit internal reasoning plus
+                    # at least a small visible completion.
+                    num_predict = max(
+                        _EMPTY_CONTENT_RETRY_MIN_PREDICT,
+                        max_tokens + _EMPTY_CONTENT_RETRY_BUMP,
+                    )
+
+                payload_messages = messages
+                if attempt > 1 and messages and messages[0].get("role") == "system":
+                    # Nudge the backend away from emitting "thinking" and towards
+                    # producing a visible completion.
+                    payload_messages = [
+                        {
+                            "role": "system",
+                            "content": (
+                                messages[0].get("content", "")
+                                + "\n\nIMPORTANT: Reply with the final answer only. "
+                                "Do not include internal reasoning. Follow the user's format strictly."
+                            ),
+                        },
+                        *messages[1:],
+                    ]
+
+                payload: dict[str, Any] = {
+                    "model": model,
+                    "stream": False,
+                    "messages": payload_messages,
+                    "options": {
+                        "temperature": temperature,
+                        "top_p": top_p,
+                        "num_predict": num_predict,
+                    },
+                }
+                if response_format is not None:
+                    payload["format"] = response_format
+
+                async with session.post(
+                    f"{OLLAMA_BASE_URL}/api/chat",
+                    json=payload,
+                    timeout=aiohttp.ClientTimeout(total=timeout_seconds),
+                ) as resp:
+                    raw = await resp.json()
+                    last_status = resp.status
+
+                last_num_predict = num_predict
+                msg = raw.get("message", {})
+                content = msg.get("content", "") or ""
+                thinking = msg.get("thinking", None)
+
+                if content:
+                    break
+
+                if last_status == 200:
+                    warnings.append(
+                        f"Model {model} returned empty content "
+                        f"(possible reasoning-token exhaustion). "
+                        f"Attempt {attempt}/{_EMPTY_CONTENT_RETRY_ATTEMPTS}, "
+                        f"num_predict: {num_predict}"
+                    )
+
+                # Only retry if the backend indicates it produced thinking/reasoning.
+                if attempt >= _EMPTY_CONTENT_RETRY_ATTEMPTS or not thinking:
+                    break
+
         elapsed = round(time.monotonic() - start, 2)
 
-        warnings: list[str] = []
-        if not content and resp.status == 200:
+        if not content and last_status == 200 and not warnings:
             warnings.append(
                 f"Model {model} returned empty content "
                 f"(possible reasoning-token exhaustion). "
-                f"Elapsed: {elapsed}s, max_tokens: {max_tokens}"
+                f"Elapsed: {elapsed}s, max_tokens: {max_tokens}, "
+                f"num_predict: {last_num_predict}"
             )
 
         return CallResult(
