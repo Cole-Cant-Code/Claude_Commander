@@ -1,42 +1,137 @@
 # Claude Commander
 
-An MCP server that lets you call multiple Ollama models and compose them into
-useful patterns — debates, voting, code review, benchmarks, and more.
+**One prompt, thirteen models.** An [MCP](https://modelcontextprotocol.io/) server that orchestrates multiple LLMs through Ollama — so your AI coding agent can debate, vote, review, benchmark, and stress-test ideas across models in a single tool call.
 
-## What it does
+> *"Instead of asking one model and hoping it's right, ask thirteen and find out where they agree."*
 
-Claude Commander sits between your MCP client (Claude Code, Codex, etc.) and an
-Ollama instance running cloud-proxied models. It exposes 16 tools:
+---
 
-**Primitives**
+## Why?
+
+Every LLM has blind spots. A single model can hallucinate confidently, miss edge cases, or anchor on a mediocre approach. Claude Commander fixes this by giving your MCP client (Claude Code, Codex, Gemini CLI, Kimi) access to **30+ orchestration tools** that compose multiple models into collaborative patterns:
+
+- **Get a second opinion** — or a thirteenth — on any question
+- **Catch bugs that one reviewer misses** — parallel code review from three independent models, merged by severity
+- **Stress-test your code** — iterative red-team attacks find flaws a single pass never would
+- **Eliminate AI slop** — detect filler, hallucinated citations, and vague hedging before it ships
+- **Find the best answer** — anonymous blind taste tests and peer-ranked leaderboards, no bias
+
+All of this happens through standard MCP tool calls. No new CLI to learn, no new UI. Your existing agent just gains superpowers.
+
+---
+
+## Table of Contents
+
+- [Quick Start](#quick-start)
+- [Tools at a Glance](#tools-at-a-glance)
+  - [Primitives](#primitives)
+  - [Orchestration](#orchestration)
+  - [Verification & Quality](#verification--quality)
+  - [Profiles & Pipelines](#profiles--pipelines)
+  - [Task Execution](#task-execution)
+- [Models](#models)
+- [Usage Examples](#usage-examples)
+- [Client Setup](#client-setup)
+- [Architecture](#architecture)
+- [Configuration](#configuration)
+- [Known Limitations](#known-limitations)
+- [Testing](#testing)
+- [Dependencies](#dependencies)
+
+---
+
+## Quick Start
+
+**Prerequisites:** Python 3.11+, [uv](https://docs.astral.sh/uv/), and a running [Ollama](https://ollama.com/) instance.
+
+```bash
+# 1. Clone & install
+git clone https://github.com/Cole-Cant-Code/Claude_Commander.git
+cd Claude_Commander
+uv sync
+
+# 2. Point to your Ollama instance
+export OLLAMA_BASE_URL="http://your-ollama-host:11434"
+
+# 3. Add to your MCP client (example: Claude Code)
+claude mcp add claude-commander -- \
+  uv run --project /path/to/Claude_Commander \
+  fastmcp run /path/to/Claude_Commander/src/claude_commander/server.py:mcp
+```
+
+That's it. Your agent now has access to all 30+ tools. See [Client Setup](#client-setup) for Codex, Gemini CLI, and Kimi configs.
+
+---
+
+## Tools at a Glance
+
+### Primitives
 
 | Tool | What it does |
 |---|---|
-| `call_model` | Call a single model |
-| `auto_call` | Auto-route to a best-fit model, with fallback retries |
-| `swarm` | Call multiple models in parallel |
-| `list_models` | Show registered models + availability |
-| `health_check` | Check Ollama connectivity |
+| [`call_model`](src/claude_commander/server.py) | Call a single model or [profile](#profiles--pipelines) |
+| [`auto_call`](src/claude_commander/server.py) | Auto-route to the best-fit model with fallback retries and optional time budgets |
+| [`swarm`](src/claude_commander/server.py) | Fan-out to multiple models in parallel (default 6, up to 13) |
+| [`list_models`](src/claude_commander/registry.py) | Show all registered models with availability status |
+| [`health_check`](src/claude_commander/server.py) | Verify Ollama connectivity |
 
-**Orchestration**
+### Orchestration
 
 | Tool | Pattern | What it does |
 |---|---|---|
-| `debate` | Sequential multi-round | Two models argue back and forth, each seeing the full transcript |
-| `vote` | Parallel + extraction | Models vote from fixed options; multi-strategy parser extracts results |
-| `consensus` | Parallel + judge | Swarm a question, then a judge synthesizes agreement/disagreement |
-| `code_review` | Parallel + merge | Multiple reviewers independently review code, findings merged by severity |
-| `multi_solve` | Parallel | Multiple models independently solve the same coding problem |
-| `benchmark` | Parallel matrix | Run N prompts x M models, get latency stats |
-| `rank` | Parallel + peer eval | Models answer, then peer-judge each other 1-10 for a leaderboard |
-| `chain` | Sequential pipeline | Output of model N feeds into model N+1 |
-| `map_reduce` | Parallel + reduce | Fan-out to many models, fan-in through a reducer with custom instructions |
-| `blind_taste_test` | Parallel + anonymize | Anonymous "Response A/B/C" comparison with a reveal mapping |
-| `contrarian` | Two-phase | One model answers, another finds logical gaps and argues alternatives |
+| [`debate`](src/claude_commander/server.py) | Multi-round sequential | Two models argue back and forth, each seeing the full transcript |
+| [`vote`](src/claude_commander/server.py) | Parallel + extraction | Models vote from fixed options; multi-strategy parser extracts results |
+| [`consensus`](src/claude_commander/server.py) | Parallel + judge | Swarm a question, then a judge synthesizes agreement and disagreement |
+| [`code_review`](src/claude_commander/server.py) | Parallel + merge | Independent reviewers find bugs, security issues, and performance problems — merged by severity |
+| [`multi_solve`](src/claude_commander/server.py) | Parallel | Multiple models independently solve the same coding problem |
+| [`benchmark`](src/claude_commander/server.py) | Prompt x model matrix | Run N prompts across M models with per-model latency stats |
+| [`rank`](src/claude_commander/server.py) | Parallel + peer eval | Models answer, then peer-judge each other 1–10 for a leaderboard |
+| [`chain`](src/claude_commander/server.py) | Sequential pipeline | Output of step N feeds into step N+1 for iterative refinement |
+| [`map_reduce`](src/claude_commander/server.py) | Fan-out + reduce | Parallel responses synthesized through a custom reducer |
+| [`blind_taste_test`](src/claude_commander/server.py) | Anonymous comparison | Responses labeled A/B/C with a reveal mapping — no anchoring bias |
+| [`contrarian`](src/claude_commander/server.py) | Thesis + antithesis | One model answers, another finds logical gaps and argues alternatives |
+
+### Verification & Quality
+
+These tools help you **catch problems before they ship**:
+
+| Tool | What it does |
+|---|---|
+| [`verify`](src/claude_commander/server.py) | Cross-model fact verification — extracts individual claims and checks each one |
+| [`red_team`](src/claude_commander/server.py) | Iterative adversarial stress testing — attacker finds flaws, defender patches, attacker escalates |
+| [`quality_gate`](src/claude_commander/server.py) | Pass/fail evaluation against criteria — a checkpoint for AI pipelines |
+| [`detect_slop`](src/claude_commander/server.py) | Multi-model detection of filler phrases, hallucinated citations, and vague hedging |
+
+### Profiles & Pipelines
+
+Save and reuse model configurations. Profiles store model + parameters; pipelines chain profiles into multi-step workflows.
+
+| Tool | What it does |
+|---|---|
+| [`create_profile`](src/claude_commander/profile_store.py) | Save a named model + temperature + system prompt combo |
+| [`get_profile`](src/claude_commander/profile_store.py) / [`list_profiles`](src/claude_commander/profile_store.py) | Inspect or list saved profiles |
+| [`clone_profile`](src/claude_commander/profile_store.py) | Duplicate a profile with modifications |
+| [`delete_profile`](src/claude_commander/profile_store.py) | Remove a custom profile |
+| [`create_pipeline`](src/claude_commander/pipeline_store.py) / [`run_pipeline`](src/claude_commander/pipeline_store.py) | Save and execute multi-step profile chains |
+| [`list_pipelines`](src/claude_commander/pipeline_store.py) / [`delete_pipeline`](src/claude_commander/pipeline_store.py) | Manage saved pipelines |
+
+**12 builtin profiles** ship out of the box (see [`defaults.py`](src/claude_commander/defaults.py)):
+
+`fast-general` · `deep-reasoner` · `code-specialist` · `thinking-judge` · `creative-writer` · `factual-analyst` · `vision-analyzer` · `quick-draft` · `strict-verifier` · `adversarial-attacker` · `quality-judge` · `slop-detector`
+
+**6 builtin pipelines:** `draft-then-refine` · `code-review-pipeline` · `creative-to-critical` · `verify-then-refine` · `red-team-then-harden` · `full-quality-check`
+
+### Task Execution
+
+| Tool | What it does |
+|---|---|
+| [`exec_task`](src/claude_commander/cli.py) | Delegate coding tasks to local CLI agents — Claude Code, Codex, Gemini CLI, or Kimi |
+
+---
 
 ## Models
 
-13 Ollama cloud models across four categories:
+13 Ollama cloud models across four categories, plus 4 local CLI agents:
 
 | Category | Models |
 |---|---|
@@ -44,31 +139,70 @@ Ollama instance running cloud-proxied models. It exposes 16 tools:
 | **Code** | Qwen3 Coder Next |
 | **Reasoning** | DeepSeek v3.2, Kimi K2 Thinking |
 | **Vision** | Qwen3 VL 235B, Qwen3 VL 235B Instruct |
+| **CLI Agents** | Claude Code, Codex, Gemini CLI, Kimi CLI |
 
-All tools accept optional `models` parameters to override defaults.
+All tools accept an optional `models` parameter to override defaults. The full catalog is defined in [`registry.py`](src/claude_commander/registry.py).
 
-## Setup
+---
 
-Requires Python 3.11+ and a running Ollama instance.
+## Usage Examples
 
-```bash
-# clone and install
-git clone https://github.com/Cole-Cant-Code/Claude_Commander.git
-cd Claude_Commander
-uv sync --extra dev
+These are MCP tool calls — your client invokes them directly.
 
-# set Ollama endpoint (defaults to localhost:11434)
-export OLLAMA_BASE_URL="http://your-ollama-host:11434"
+**Get a code review from three independent models:**
+```python
+code_review(code="def connect(host): ...", language="python")
 ```
 
-Agent instructions (for any client): [`AGENTS.md`](AGENTS.md)
+**Debate a design decision:**
+```python
+debate(prompt="Is Rust better than Go for CLI tools?", rounds=3)
+```
 
-### Claude Code
+**Auto-route with fallback and time budget:**
+```python
+auto_call(prompt="Review this function for bugs", task="code", strategy="quality", max_time_ms=15000)
+```
 
-Server name: `claude-commander`
+**Vote on an architecture choice:**
+```python
+vote(prompt="Best approach?", options=["monolith", "microservices", "serverless"])
+```
+
+**Red-team your API design:**
+```python
+red_team(content="POST /users accepts {name, email, role} and creates a user...", rounds=3)
+```
+
+**Run a sequential refinement pipeline:**
+```python
+chain(
+  prompt="Explain quantum computing to a 10-year-old",
+  pipeline=["glm-5:cloud", "deepseek-v3.2:cloud", "kimi-k2-thinking:cloud"]
+)
+```
+
+**Anonymous blind taste test:**
+```python
+blind_taste_test(prompt="Explain monads simply", count=4)
+```
+
+**Peer-ranked leaderboard:**
+```python
+rank(prompt="Write a haiku about recursion")
+```
+
+---
+
+## Client Setup
+
+<details>
+<summary><strong>Claude Code</strong></summary>
 
 ```bash
-claude mcp add claude-commander -- uv run --project /path/to/Claude_Commander fastmcp run /path/to/Claude_Commander/src/claude_commander/server.py:mcp
+claude mcp add claude-commander -- \
+  uv run --project /path/to/Claude_Commander \
+  fastmcp run /path/to/Claude_Commander/src/claude_commander/server.py:mcp
 ```
 
 Or add to `~/.claude.json`:
@@ -84,10 +218,10 @@ Or add to `~/.claude.json`:
   }
 }
 ```
+</details>
 
-### Codex
-
-Server name: `codex-commander`
+<details>
+<summary><strong>Codex</strong></summary>
 
 Add to `~/.codex/config.toml`:
 
@@ -100,13 +234,15 @@ args = ["run", "--project", "/path/to/Claude_Commander", "fastmcp", "run", "/pat
 MCP_SERVER_NAME = "Codex Commander"
 OLLAMA_BASE_URL = "http://your-ollama-host:11434"
 ```
+</details>
 
-### Gemini CLI
-
-Server name: `gemini-commander`
+<details>
+<summary><strong>Gemini CLI</strong></summary>
 
 ```bash
-gemini mcp add -e OLLAMA_BASE_URL=http://your-ollama-host:11434 gemini-commander -- uv run --project /path/to/Claude_Commander fastmcp run /path/to/Claude_Commander/src/claude_commander/server.py:mcp
+gemini mcp add -e OLLAMA_BASE_URL=http://your-ollama-host:11434 gemini-commander -- \
+  uv run --project /path/to/Claude_Commander \
+  fastmcp run /path/to/Claude_Commander/src/claude_commander/server.py:mcp
 ```
 
 Or add to `~/.gemini/settings.json`:
@@ -122,10 +258,10 @@ Or add to `~/.gemini/settings.json`:
   }
 }
 ```
+</details>
 
-### Kimi CLI
-
-Server name: `kimi-commander`
+<details>
+<summary><strong>Kimi CLI</strong></summary>
 
 Add to `~/.kimi/mcp.json`:
 
@@ -140,77 +276,52 @@ Add to `~/.kimi/mcp.json`:
   }
 }
 ```
+</details>
 
-## Usage examples
+For agent-specific usage instructions, see [`AGENTS.md`](AGENTS.md).
 
-These are MCP tool calls. Your client (Claude Code, Codex, Gemini, Kimi, etc.) invokes them directly.
+---
 
-**Debate** — two models argue about a topic:
-```
-debate(prompt="Is Rust better than Go?", rounds=3)
-```
-
-**Auto call** — route + fallback in one call:
-```
-auto_call(prompt="Review this Python function for bugs", task="code", strategy="quality")
-```
-
-**Vote** — ask all models a yes/no question:
-```
-vote(prompt="Is the sky blue?")
-vote(prompt="Best approach?", options=["monolith", "microservices", "serverless"])
-```
-
-**Code review** — three reviewers, merged by severity:
-```
-code_review(code="def connect(host): ...", language="python")
-```
-
-**Chain** — sequential refinement pipeline:
-```
-chain(
-  prompt="Explain quantum computing",
-  pipeline=["glm-5:cloud", "deepseek-v3.2:cloud", "kimi-k2-thinking:cloud"]
-)
-```
-
-**Rank** — peer-evaluated leaderboard:
-```
-rank(prompt="Write a haiku about recursion")
-```
-
-**Blind taste test** — anonymous comparison:
-```
-blind_taste_test(prompt="Explain monads", count=4)
-```
-
-## Tool details
-
-### auto_call
+## Architecture
 
 ```
-auto_call(
-  prompt,
-  task="auto",
-  strategy="balanced",
-  routing_profile?,
-  models?,
-  max_attempts=3,
-  max_time_ms?,
-  ...
-)
+src/claude_commander/
+  server.py            ← FastMCP server: 30+ tools & all orchestration logic
+  registry.py          ← 17-model catalog (13 cloud + 4 CLI) with categories & strengths
+  ollama.py            ← Async HTTP client for the Ollama API (aiohttp)
+  cli.py               ← Async subprocess runner for CLI agents (claude, codex, gemini, kimi)
+  models.py            ← ~40 Pydantic result types for structured tool output
+  profile_store.py     ← JSON-persisted reusable model profiles
+  pipeline_store.py    ← JSON-persisted multi-step pipeline definitions
+  defaults.py          ← 12 builtin profiles + 6 builtin pipelines
+  resolver.py          ← Profile name → model ID + parameter resolution
+
+tests/                 ← 209 tests, all mocked — no Ollama instance needed
+  test_server.py       ← Core tool tests
+  test_advanced.py     ← Orchestration tools + helper tests
+  test_verification.py ← Verification & anti-slop tool tests
+  test_cli.py          ← CLI subprocess caller tests
+  test_ollama.py       ← HTTP client tests
+  test_registry.py     ← Model catalog tests
+  test_resolver.py     ← Profile resolver tests
+  test_defaults.py     ← Builtin seed tests
+  test_pipeline_store.py ← Pipeline persistence tests
 ```
 
-Automatically routes the prompt to a best-fit model (or profile) and retries
-with ordered fallbacks if the first attempt errors or returns empty content.
-Tasks: `auto`, `general`, `code`, `reasoning`, `creative`, `verification`, `vision`.
-Strategies: `fast`, `balanced`, `quality`.
+Key design decisions:
+- **Semaphore-bounded concurrency** — max 13 parallel Ollama calls to prevent overwhelming the backend
+- **Thinking model auto-retry** — if a reasoning model exhausts its token budget on chain-of-thought and returns empty content, the server automatically retries with a bumped `num_predict`
+- **Structured output everywhere** — every tool returns typed Pydantic models, not raw strings
+- **Profile-first API** — any parameter that takes a model ID also accepts a profile name, so saved configs compose seamlessly with all tools
 
-`max_time_ms` applies a total wall-clock budget for all attempts. If budget runs
-out, `auto_call` stops and returns an error with `budget_exhausted=true`.
+---
 
-Routing can be config-driven via `CLAUDE_COMMANDER_ROUTING_CONFIG`
-(defaults to `~/.claude-commander/auto_routing.json`). Optional format:
+## Configuration
+
+<details>
+<summary><strong>Auto-routing config</strong></summary>
+
+`auto_call` supports config-driven routing via `CLAUDE_COMMANDER_ROUTING_CONFIG` (defaults to `~/.claude-commander/auto_routing.json`):
 
 ```json
 {
@@ -230,163 +341,49 @@ Routing can be config-driven via `CLAUDE_COMMANDER_ROUTING_CONFIG`
 }
 ```
 
-Select a profile at runtime with `routing_profile="fast-local"`.
+Select a routing profile at runtime: `auto_call(prompt="...", routing_profile="fast-local")`
 
-### debate
+</details>
 
-```
-debate(prompt, model_a?, model_b?, rounds=3)
-```
+<details>
+<summary><strong>Environment variables</strong></summary>
 
-Multi-round back-and-forth. Each round's model sees the full transcript so far.
-Defaults: `deepseek-v3.2:cloud` vs `glm-5:cloud`.
+| Variable | Default | Description |
+|---|---|---|
+| `OLLAMA_BASE_URL` | `http://localhost:11434` | Ollama API endpoint |
+| `CLAUDE_COMMANDER_ROUTING_CONFIG` | `~/.claude-commander/auto_routing.json` | Auto-routing profile config path |
 
-### vote
+</details>
 
-```
-vote(prompt, options=["yes","no"], models?)
-```
-
-All models answer with a system prompt forcing them to lead with their choice.
-Votes are extracted via a cascade: first-word match, phrase patterns
-(`"I vote X"`, `"my answer is X"`), occurrence counting, then abstain fallback.
-Returns tally, majority, and agreement percentage.
-
-### consensus
-
-```
-consensus(prompt, models?, judge_model?)
-```
-
-Phase 1: swarm to all models. Phase 2: `kimi-k2-thinking:cloud` (default judge)
-identifies agreement, disagreement, and produces a unified answer.
-
-### code_review
-
-```
-code_review(code, language?, review_models?, merge_model?)
-```
-
-Default reviewers: `qwen3-coder-next:cloud`, `deepseek-v3.2:cloud`, `gpt-oss:120b-cloud`.
-System prompt targets bugs, security, performance, readability with line-number references.
-Merge phase deduplicates and sorts findings critical-to-minor.
-
-### multi_solve
-
-```
-multi_solve(problem, language?, models?)
-```
-
-Sends the problem to code + reasoning models by default. Each produces a complete
-solution with comments. Useful for comparing algorithmic approaches.
-
-### benchmark
-
-```
-benchmark(prompts, models?)
-```
-
-Runs every prompt against every model in parallel (semaphore-bounded). Returns
-a structured matrix with per-cell latency and per-model average latency stats.
-
-### rank
-
-```
-rank(prompt, models?, judge_count=3)
-```
-
-All models answer, then randomly-selected peers score each answer 1-10.
-Score extraction handles `"8/10"`, `"Score: 8"`, `"Rating: 8"`, `"8 out of 10"`.
-Returns a sorted leaderboard with per-judge breakdowns.
-
-### chain
-
-```
-chain(prompt, pipeline, pass_context=True)
-```
-
-Sequential pipeline. With `pass_context=True` (default), each step sees all prior
-outputs. With `False`, each step only sees the immediately previous output.
-
-### map_reduce
-
-```
-map_reduce(prompt, mapper_models?, reducer_model?, reduce_prompt?)
-```
-
-Like `consensus` but combines information rather than finding agreement.
-Custom `reduce_prompt` lets you control the synthesis instruction.
-
-### blind_taste_test
-
-```
-blind_taste_test(prompt, count=3)
-```
-
-Randomly selects `count` models (seeded by prompt hash for reproducibility),
-shuffles responses into "Response A", "Response B", etc. The `reveal` dict
-maps labels to model IDs.
-
-### contrarian
-
-```
-contrarian(prompt, thesis_model?, antithesis_model?)
-```
-
-Phase 1: `qwen3-next:80b-cloud` answers normally. Phase 2: `deepseek-v3.2:cloud`
-gets a system prompt to find logical gaps, challenge assumptions, and argue
-alternatives — substantively, not for its own sake.
-
-## Project structure
-
-```
-AGENTS.md                        # Agent instructions (any MCP client)
-
-src/claude_commander/
-  __init__.py                    # version
-  registry.py                    # 13-model catalog with strengths + categories
-  ollama.py                      # async HTTP client (aiohttp)
-  models.py                      # Pydantic result types
-  profile_store.py               # reusable profile persistence
-  server.py                      # FastMCP tools + orchestration logic
-
-tests/
-  test_registry.py               # model catalog tests
-  test_ollama.py                 # HTTP client tests (mocked)
-  test_server.py                 # original 4 tools (mocked)
-  test_advanced.py               # 11 orchestration tools + helpers (mocked)
-```
+---
 
 ## Known Limitations
 
-**Thinking model token exhaustion.** Setting `max_tokens` below ~200 causes
-thinking/reasoning models (`deepseek-v3.2`, `kimi-k2-thinking`, `glm-5`) to consume
-their entire budget on internal chain-of-thought and return empty content. The server
-detects this and retries with a bumped `num_predict` (~306), but the safe practice is
-to never go below 200–300 tokens for calls involving these models.
+- **Thinking model token floor.** Reasoning models (`deepseek-v3.2`, `kimi-k2-thinking`, `glm-5`) need at least ~200 tokens or they consume their entire budget on chain-of-thought. The server auto-retries, but avoid setting `max_tokens` below 200–300.
 
-**Consensus scope.** `consensus` defaults to all registered models — 13 cloud + 4 CLI
-agents (17 total). Pass an explicit `models` list to control scope and context cost.
+- **Consensus scope.** `consensus` defaults to all 17 registered models. Pass an explicit `models` list to control scope and cost.
 
-**CLI agent prerequisites.** CLI agents (`claude:cli`, `codex:cli`, `gemini:cli`,
-`kimi:cli`) require their binaries on `$PATH`. Missing binaries fail with
-`No such file or directory`; timeouts/OOM exit with code `-9`. These failures are
-per-model and don't block other models in a swarm.
+- **CLI agent prerequisites.** `exec_task` agents (`claude:cli`, `codex:cli`, etc.) require their binaries on `$PATH`. Missing binaries fail gracefully per-model without blocking other models in a swarm.
 
-**No token-usage metadata.** Responses include `elapsed_seconds` per model but not
-token counts. Context-conscious callers should prefer compact tools (`vote`,
-`quality_gate`) or set `max_tokens` to 300–500 instead of the 4096 default.
+- **No token-usage metadata.** Responses include `elapsed_seconds` but not token counts. For cost-conscious usage, prefer compact tools (`vote`, `quality_gate`) or set `max_tokens` to 300–500.
 
-## Tests
+---
+
+## Testing
 
 ```bash
+uv sync --extra dev
 uv run pytest tests/ -v
 ```
 
-209 tests, all mocked at the `call_ollama` boundary — no Ollama instance needed.
+209 tests, all mocked at the [`call_ollama`](src/claude_commander/ollama.py) boundary — no running Ollama instance needed.
+
+---
 
 ## Dependencies
 
-- [FastMCP](https://github.com/jlowin/fastmcp) >= 2.14 — MCP server framework
-- [Pydantic](https://docs.pydantic.dev/) >= 2.8 — result models
-- [aiohttp](https://docs.aiohttp.org/) >= 3.9 — async HTTP for Ollama API
+| Package | Version | Role |
+|---|---|---|
+| [FastMCP](https://github.com/jlowin/fastmcp) | >= 2.14 | MCP server framework |
+| [Pydantic](https://docs.pydantic.dev/) | >= 2.8 | Structured result models |
+| [aiohttp](https://docs.aiohttp.org/) | >= 3.9 | Async HTTP client for Ollama |
