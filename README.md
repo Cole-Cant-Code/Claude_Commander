@@ -1,10 +1,10 @@
 # Claude Commander
 
-**One prompt, thirteen models.** An [MCP](https://modelcontextprotocol.io/) server that orchestrates multiple LLMs through Ollama — so your AI coding agent can debate, vote, review, benchmark, and stress-test ideas across models in a single tool call.
+**One prompt, many models.** An [MCP](https://modelcontextprotocol.io/) server that orchestrates multiple LLMs — 13 cloud models via [Ollama](https://ollama.com/) and 4 local CLI agents ([Claude Code](https://docs.anthropic.com/en/docs/claude-code), [Codex](https://openai.com/index/codex/), [Gemini CLI](https://github.com/google-gemini/gemini-cli), [Kimi](https://kimi.ai/)) — so your AI coding agent can debate, vote, review, benchmark, and stress-test ideas across models in a single tool call.
 
-> *"Instead of asking one model and hoping it's right, ask thirteen and find out where they agree."*
+> *"Instead of asking one model and hoping it's right, ask many and find out where they agree."*
 
-**Works with [Claude Code](https://docs.anthropic.com/en/docs/claude-code) and [Codex](https://openai.com/index/codex/).** Set up once, switch between clients freely — same server, same tools, same results. Also supports Gemini CLI and Kimi.
+**Works across agents.** Claude Code can query Codex. Codex can query Claude. Either can pull in Gemini or Kimi. Set up once, switch between clients freely — same server, same tools, same results. Ollama is optional if you only need CLI agents.
 
 ---
 
@@ -44,7 +44,7 @@ All of this happens through standard MCP tool calls. No new CLI to learn, no new
 
 ## Quick Start
 
-**Prerequisites:** Python 3.11+, [uv](https://docs.astral.sh/uv/), and a running [Ollama](https://ollama.com/) instance.
+**Prerequisites:** Python 3.11+ and [uv](https://docs.astral.sh/uv/). Ollama is needed for the 13 cloud models; CLI agents (Claude Code, Codex, Gemini, Kimi) work without it as long as their binaries are on `$PATH`.
 
 ```bash
 # 1. Clone & install
@@ -52,7 +52,7 @@ git clone https://github.com/Cole-Cant-Code/Claude_Commander.git
 cd Claude_Commander
 uv sync
 
-# 2. Point to your Ollama instance
+# 2. (Optional) Point to your Ollama instance — skip if using CLI agents only
 export OLLAMA_BASE_URL="http://your-ollama-host:11434"
 
 # 3. Add to your MCP client (example: Claude Code)
@@ -133,7 +133,11 @@ Save and reuse model configurations. Profiles store model + parameters; pipeline
 
 ## Models
 
-13 Ollama cloud models across four categories, plus 4 local CLI agents:
+Commander has **two independent model paths** — use either or both:
+
+### Ollama Cloud Models (requires Ollama)
+
+13 models across four categories, called via the Ollama HTTP API:
 
 | Category | Models |
 |---|---|
@@ -141,9 +145,32 @@ Save and reuse model configurations. Profiles store model + parameters; pipeline
 | **Code** | Qwen3 Coder Next |
 | **Reasoning** | DeepSeek v3.2, Kimi K2 Thinking |
 | **Vision** | Qwen3 VL 235B, Qwen3 VL 235B Instruct |
-| **CLI Agents** | Claude Code, Codex, Gemini CLI, Kimi CLI |
 
-All tools accept an optional `models` parameter to override defaults. The full catalog is defined in [`registry.py`](src/claude_commander/registry.py).
+### CLI Agents (no Ollama needed)
+
+4 agents run as local subprocesses — they just need their binary on `$PATH`:
+
+| Agent | ID | What it brings |
+|---|---|---|
+| Claude Code | `claude:cli` | Reasoning, tool use, agentic execution |
+| Codex | `codex:cli` | Code generation, sandboxed execution |
+| Gemini CLI | `gemini:cli` | Multimodal, search, code generation |
+| Kimi | `kimi:cli` | Code generation, agentic execution |
+
+**Mix and match.** All tools accept an optional `models` parameter. Pass Ollama models, CLI agents, or both:
+
+```python
+# Ollama only
+debate(prompt="...", model_a="deepseek-v3.2:cloud", model_b="glm-5:cloud")
+
+# CLI only — no Ollama required
+debate(prompt="...", model_a="claude:cli", model_b="codex:cli")
+
+# Both together
+swarm(prompt="...", models=["deepseek-v3.2:cloud", "claude:cli", "gemini:cli"])
+```
+
+The full catalog is defined in [`registry.py`](src/claude_commander/registry.py).
 
 ---
 
@@ -314,6 +341,7 @@ tests/                 ← 209 tests, all mocked — no Ollama instance needed
 ```
 
 Key design decisions:
+- **Dual-path routing** — every tool call checks `is_cli` on the model: CLI agents run as local subprocesses via [`cli.py`](src/claude_commander/cli.py), Ollama models go through the HTTP API via [`ollama.py`](src/claude_commander/ollama.py). The two paths are fully independent — CLI agents work without Ollama and vice versa
 - **Semaphore-bounded concurrency** — max 13 parallel Ollama calls to prevent overwhelming the backend
 - **Thinking model auto-retry** — if a reasoning model exhausts its token budget on chain-of-thought and returns empty content, the server automatically retries with a bumped `num_predict`
 - **Structured output everywhere** — every tool returns typed Pydantic models, not raw strings
@@ -368,7 +396,7 @@ Select a routing profile at runtime: `auto_call(prompt="...", routing_profile="f
 
 - **Consensus scope.** `consensus` defaults to all 17 registered models. Pass an explicit `models` list to control scope and cost.
 
-- **CLI agent prerequisites.** `exec_task` agents (`claude:cli`, `codex:cli`, etc.) require their binaries on `$PATH`. Missing binaries fail gracefully per-model without blocking other models in a swarm.
+- **CLI agents need their binaries on `$PATH`.** `claude:cli` needs `claude`, `codex:cli` needs `codex`, etc. Missing binaries fail gracefully per-model without blocking other models in a swarm. CLI agents do **not** require Ollama — they run as independent local subprocesses.
 
 - **No token-usage metadata.** Responses include `elapsed_seconds` but not token counts. For cost-conscious usage, prefer compact tools (`vote`, `quality_gate`) or set `max_tokens` to 300–500.
 
