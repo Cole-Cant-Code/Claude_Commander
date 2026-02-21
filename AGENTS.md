@@ -10,6 +10,23 @@ You have access to **Claude Commander**, an MCP server that orchestrates
 > model's strengths genuinely help (e.g., asking a code-specialist CLI to generate
 > a single function). Do not use it to hand off your entire job.
 
+> **Cognitive independence note.** The value of multi-model orchestration is that
+> each model thinks differently. **Do not poison the pool with your own conclusions.**
+>
+> - **Ask neutral questions.** Write `consensus(prompt="What are the trade-offs
+>   of microservices vs monolith?")` — not `"I think microservices are better,
+>   do you agree?"`. Leading prompts anchor every model on your framing and
+>   destroy the diversity you're paying for.
+> - **Never inject your preferred answer** into the `prompt` or `system_prompt`
+>   of Commander tools. If you already have an opinion, state it to the user
+>   separately — don't bake it into the question you send to 13 models.
+> - **Don't cherry-pick models** to manufacture agreement. If you only include
+>   models you expect to agree with you, you're running a confirmation machine,
+>   not a consensus tool. Omit the `models` parameter or use a representative set.
+> - **Report results faithfully.** When presenting Commander output to the user,
+>   include dissenting views and minority positions — don't summarize away
+>   disagreement to make the result look cleaner.
+
 ## When to Use Commander
 
 Use Commander when you need:
