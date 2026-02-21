@@ -128,7 +128,7 @@ MODELS: dict[str, ModelInfo] = {
             category="cli",
             strengths=["code generation", "agentic execution", "sandboxed execution"],
             is_cli=True,
-            cli_command=["codex", "exec", "{prompt}", "--json"],
+            cli_command=["codex", "exec", "{prompt}", "--json", "--skip-git-repo-check"],
         ),
         ModelInfo(
             model_id="kimi:cli",
@@ -140,6 +140,11 @@ MODELS: dict[str, ModelInfo] = {
         ),
     ]
 }
+
+
+# Cloud-only model IDs — excludes CLI agents which are slow (subprocess-based)
+# and should be opt-in for multi-model tools rather than default.
+CLOUD_MODELS: list[str] = [mid for mid, info in MODELS.items() if not info.is_cli]
 
 
 def get_model(model_id: str) -> ModelInfo:

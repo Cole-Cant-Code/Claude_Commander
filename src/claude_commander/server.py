@@ -58,7 +58,7 @@ from claude_commander.cli import call_cli
 from claude_commander.ollama import OLLAMA_BASE_URL, call_ollama, check_ollama
 from claude_commander.pipeline_store import get_pipeline_store
 from claude_commander.profile_store import get_profile_store
-from claude_commander.registry import MODELS, get_model
+from claude_commander.registry import CLOUD_MODELS, MODELS, get_model
 from claude_commander.resolver import _UNSET, merge_overrides, resolve
 
 # Keep the historical name by default, but allow config-level aliases (e.g. "GM Commander")
@@ -70,7 +70,7 @@ a `model` parameter also accepts a profile name (run `list_profiles` to see them
 WHEN TO USE WHICH TOOL:
 - Need one second opinion? → call_model
 - Need automatic routing + fallback? → auto_call
-- Need broad coverage? → swarm (6 by default, count=13 for all), consensus (swarm + judge synthesis)
+- Need broad coverage? → swarm (6 by default, count=13 for all cloud), consensus (swarm + judge synthesis)
 - Need to stress-test content? → red_team (iterative attacker/defender)
 - Need a quality checkpoint? → quality_gate (pass/fail against criteria)
 - Need to verify facts? → verify (cross-model claim checking)
@@ -118,7 +118,7 @@ raw model registry.
 |------|-------------|---------------------|
 | `call_model` | Single model/profile call | Targeted second opinion on a specific question |
 | `auto_call` | Auto-route to best-fit model with fallback retries | Quick "pick-for-me" calls with resilience |
-| `swarm` | Fan-out to models in parallel (6 default, count=13 for all) | Broad coverage, seeing how many models agree |
+| `swarm` | Fan-out to models in parallel (6 default, count=13 for all cloud) | Broad coverage, seeing how many models agree |
 | `consensus` | Swarm + judge synthesizes a unified answer | Complex open-ended questions needing a single answer |
 | `chain` | Sequential pipeline — each model builds on prior output | Iterative refinement across different model strengths |
 | `run_pipeline` | Execute a saved pipeline by name | Reusable multi-step workflows |
@@ -343,7 +343,7 @@ RANK_DEFAULT_MODELS = [
     "minimax-m2.5:cloud",
 ]
 # Default swarm: 6 models covering reasoning, code, general, and vision.
-# Pass count=13 or models=list(MODELS.keys()) to hit all.
+# Pass count=13 to hit all cloud models. CLI agents are opt-in via explicit models list.
 DEFAULT_SWARM_COUNT = 6
 DEFAULT_SWARM_MODELS = [
     "deepseek-v3.2:cloud",       # reasoning
@@ -1043,12 +1043,12 @@ async def swarm(
     max_tokens: int = 4096,
     response_format: str | dict[str, Any] | None = None,
 ) -> SwarmResult:
-    """Call models/profiles in parallel. Defaults to 6 diverse models. Pass count=13 for all."""
+    """Call models/profiles in parallel. Defaults to 6 diverse models. Pass count=13 for all cloud."""
     if models:
         target_ids = models
     elif count is not None:
-        # Caller asked for a specific count — slice from all models
-        target_ids = list(MODELS.keys())[:min(count, len(MODELS))]
+        # Caller asked for a specific count — slice from cloud models only
+        target_ids = CLOUD_MODELS[:min(count, len(CLOUD_MODELS))]
     else:
         target_ids = DEFAULT_SWARM_MODELS[:DEFAULT_SWARM_COUNT]
     resolved_ids = [_resolve_model(mid) for mid in target_ids]
@@ -1169,7 +1169,7 @@ async def vote(
 ) -> VoteResult:
     """Models/profiles vote on a question. Returns tally, majority, agreement %."""
     opts = options or ["yes", "no"]
-    target_ids = models if models else list(MODELS.keys())
+    target_ids = models if models else CLOUD_MODELS
     for mid in target_ids:
         _resolve_model(mid)
 
@@ -1236,7 +1236,7 @@ async def consensus(
 ) -> ConsensusResult:
     """Swarm then judge-synthesize into a unified answer. Accepts profiles."""
     judge = judge_model or DEFAULT_JUDGE
-    target_ids = models if models else list(MODELS.keys())
+    target_ids = models if models else CLOUD_MODELS
     for mid in target_ids:
         _resolve_model(mid)
     _resolve_model(judge)
@@ -1392,7 +1392,7 @@ async def benchmark(
     models: list[str] | None = None,
 ) -> BenchmarkResult:
     """Prompt x model matrix. Returns per-model latency stats. Accepts profiles."""
-    target_ids = models if models else list(MODELS.keys())
+    target_ids = models if models else CLOUD_MODELS
     for mid in target_ids:
         _resolve_model(mid)
 
@@ -1589,7 +1589,7 @@ async def map_reduce(
     reduce_prompt: str | None = None,
 ) -> MapReduceResult:
     """Fan-out to models/profiles, fan-in with a reducer. Custom reduce_prompt supported."""
-    mappers = mapper_models if mapper_models else list(MODELS.keys())
+    mappers = mapper_models if mapper_models else CLOUD_MODELS
     reducer = reducer_model or DEFAULT_JUDGE
     for mid in mappers:
         _resolve_model(mid)
@@ -1641,7 +1641,7 @@ async def blind_taste_test(
     count: int = 3,
 ) -> BlindTasteResult:
     """Anonymous A/B/C comparison. Reveal mapping shows which model was which."""
-    all_ids = list(MODELS.keys())
+    all_ids = list(CLOUD_MODELS)
     count = min(count, len(all_ids))
 
     seed = int(hashlib.sha256(prompt.encode()).hexdigest(), 16) % (2**32)

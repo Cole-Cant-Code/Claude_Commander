@@ -601,7 +601,7 @@ async def test_blind_taste_test_count_capped():
     with patch("claude_commander.server.call_ollama", side_effect=_make_mock_varied()), \
          patch("claude_commander.server.call_cli", side_effect=_make_mock_varied()):
         result = await _blind_taste_test("test", count=100)
-    assert len(result.responses) == 17  # max = total models
+    assert len(result.responses) == 13  # max = cloud models (CLI agents excluded by default)
 
 
 # ---------------------------------------------------------------------------
