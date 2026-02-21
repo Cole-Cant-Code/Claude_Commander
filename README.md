@@ -4,11 +4,13 @@
 
 > *"Instead of asking one model and hoping it's right, ask thirteen and find out where they agree."*
 
+**Works with [Claude Code](https://docs.anthropic.com/en/docs/claude-code) and [Codex](https://openai.com/index/codex/).** Set up once, switch between clients freely — same server, same tools, same results. Also supports Gemini CLI and Kimi.
+
 ---
 
 ## Why?
 
-Every LLM has blind spots. A single model can hallucinate confidently, miss edge cases, or anchor on a mediocre approach. Claude Commander fixes this by giving your MCP client (Claude Code, Codex, Gemini CLI, Kimi) access to **30+ orchestration tools** that compose multiple models into collaborative patterns:
+Every LLM has blind spots. A single model can hallucinate confidently, miss edge cases, or anchor on a mediocre approach. Claude Commander fixes this by giving your agent access to **30+ orchestration tools** that compose multiple models into collaborative patterns:
 
 - **Get a second opinion** — or a thirteenth — on any question
 - **Catch bugs that one reviewer misses** — parallel code review from three independent models, merged by severity
@@ -16,7 +18,7 @@ Every LLM has blind spots. A single model can hallucinate confidently, miss edge
 - **Eliminate AI slop** — detect filler, hallucinated citations, and vague hedging before it ships
 - **Find the best answer** — anonymous blind taste tests and peer-ranked leaderboards, no bias
 
-All of this happens through standard MCP tool calls. No new CLI to learn, no new UI. Your existing agent just gains superpowers.
+All of this happens through standard MCP tool calls. No new CLI to learn, no new UI. Your existing agent — whether it's Claude Code or Codex — just gains superpowers.
 
 ---
 
@@ -196,8 +198,9 @@ rank(prompt="Write a haiku about recursion")
 
 ## Client Setup
 
-<details>
-<summary><strong>Claude Code</strong></summary>
+Both primary clients are shown below. The same server works identically with either — pick whichever you prefer, or use both.
+
+### Claude Code
 
 ```bash
 claude mcp add claude-commander -- \
@@ -218,10 +221,10 @@ Or add to `~/.claude.json`:
   }
 }
 ```
-</details>
 
-<details>
-<summary><strong>Codex</strong></summary>
+Agent instructions: [`CLAUDE.md`](CLAUDE.md)
+
+### Codex
 
 Add to `~/.codex/config.toml`:
 
@@ -234,7 +237,8 @@ args = ["run", "--project", "/path/to/Claude_Commander", "fastmcp", "run", "/pat
 MCP_SERVER_NAME = "Codex Commander"
 OLLAMA_BASE_URL = "http://your-ollama-host:11434"
 ```
-</details>
+
+Agent instructions: [`AGENTS.md`](AGENTS.md)
 
 <details>
 <summary><strong>Gemini CLI</strong></summary>
@@ -278,13 +282,14 @@ Add to `~/.kimi/mcp.json`:
 ```
 </details>
 
-For agent-specific usage instructions, see [`AGENTS.md`](AGENTS.md).
-
 ---
 
 ## Architecture
 
 ```
+CLAUDE.md              ← Agent instructions for Claude Code
+AGENTS.md              ← Agent instructions for Codex (and other MCP clients)
+
 src/claude_commander/
   server.py            ← FastMCP server: 30+ tools & all orchestration logic
   registry.py          ← 17-model catalog (13 cloud + 4 CLI) with categories & strengths

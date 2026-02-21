@@ -1,14 +1,14 @@
-# Commander — Agent Instructions
+# Commander — Claude Code Instructions
 
 You have access to **Claude Commander**, an MCP server that orchestrates
 13 Ollama cloud models plus 4 CLI agents. Use it as a multi-model GM (game master).
 
-> **Coexistence note.** This server is shared across MCP clients (Claude Code,
-> Codex, Gemini CLI, Kimi). You are the primary agent — Commander is your *tool*,
-> not your replacement. Never delegate your core task to a rival CLI agent via
-> `exec_task`. Use `exec_task` only for **isolated subtasks** where a different
-> model's strengths genuinely help (e.g., asking a code-specialist CLI to generate
-> a single function). Do not use it to hand off your entire job.
+> **Coexistence rule.** This MCP server is also used by Codex and other clients.
+> You are the primary agent in this session — Commander is your *tool*, not your
+> replacement. **Never use `exec_task` with `codex:cli` to hand off your task.**
+> Only use `exec_task` for isolated subtasks where a specific CLI agent's strengths
+> genuinely help (e.g., a narrow code generation request). You own the task; Commander
+> provides second opinions.
 
 ## When to Use Commander
 
@@ -74,7 +74,7 @@ Use it when diversity of thought matters or when getting it wrong would be expen
 
 | Tool | When to use it |
 |------|---------------|
-| `exec_task` | Delegate an **isolated subtask** to a CLI agent (see coexistence note above) |
+| `exec_task` | Delegate an **isolated subtask** to a CLI agent (see coexistence rule above) |
 
 ## Model Picks
 
