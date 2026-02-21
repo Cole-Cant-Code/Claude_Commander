@@ -357,6 +357,26 @@ tests/
   test_advanced.py               # 11 orchestration tools + helpers (mocked)
 ```
 
+## Known Limitations
+
+**Thinking model token exhaustion.** Setting `max_tokens` below ~200 causes
+thinking/reasoning models (`deepseek-v3.2`, `kimi-k2-thinking`, `glm-5`) to consume
+their entire budget on internal chain-of-thought and return empty content. The server
+detects this and retries with a bumped `num_predict` (~306), but the safe practice is
+to never go below 200–300 tokens for calls involving these models.
+
+**Consensus scope.** `consensus` defaults to all registered models — 13 cloud + 4 CLI
+agents (17 total). Pass an explicit `models` list to control scope and context cost.
+
+**CLI agent prerequisites.** CLI agents (`claude:cli`, `codex:cli`, `gemini:cli`,
+`kimi:cli`) require their binaries on `$PATH`. Missing binaries fail with
+`No such file or directory`; timeouts/OOM exit with code `-9`. These failures are
+per-model and don't block other models in a swarm.
+
+**No token-usage metadata.** Responses include `elapsed_seconds` per model but not
+token counts. Context-conscious callers should prefer compact tools (`vote`,
+`quality_gate`) or set `max_tokens` to 300–500 instead of the 4096 default.
+
 ## Tests
 
 ```bash

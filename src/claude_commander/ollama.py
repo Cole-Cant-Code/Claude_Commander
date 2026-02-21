@@ -21,6 +21,10 @@ _EMPTY_CONTENT_RETRY_ATTEMPTS = 2
 _EMPTY_CONTENT_RETRY_BUMP = 256
 _EMPTY_CONTENT_RETRY_MIN_PREDICT = 128
 
+# Proactive floor for thinking models — applied *before* the first attempt
+# to avoid the empty-content-then-retry dance entirely.
+_THINKING_MODEL_MIN_PREDICT = 256
+
 
 async def call_ollama(
     model: str,
@@ -55,6 +59,16 @@ async def call_ollama(
         thinking = None
         last_status = 0
         last_num_predict = max_tokens
+
+        # Enforce a minimum token budget for thinking models so their
+        # chain-of-thought doesn't consume the entire num_predict.
+        info = MODELS.get(model)
+        if info and info.is_thinking and max_tokens < _THINKING_MODEL_MIN_PREDICT:
+            warnings.append(
+                f"max_tokens={max_tokens} is below the {_THINKING_MODEL_MIN_PREDICT} "
+                f"floor for thinking model {model}; raised automatically."
+            )
+            max_tokens = _THINKING_MODEL_MIN_PREDICT
 
         async with aiohttp.ClientSession() as session:
             for attempt in range(1, _EMPTY_CONTENT_RETRY_ATTEMPTS + 1):

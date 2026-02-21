@@ -26,6 +26,7 @@ MODELS: dict[str, ModelInfo] = {
             display_name="GLM-5",
             category="general",
             strengths=["academic reasoning", "structured analysis"],
+            is_thinking=True,
         ),
         ModelInfo(
             model_id="minimax-m2.5:cloud",

@@ -280,6 +280,46 @@ high scores elsewhere.
 with `create_profile` to save your preferred configurations.
 - `auto_call` supports `max_time_ms` and config-driven routing profiles from \
 `CLAUDE_COMMANDER_ROUTING_CONFIG` (default: `~/.claude-commander/auto_routing.json`).
+
+---
+
+## Known Limitations & Gotchas
+
+### Token budget and thinking models
+
+Setting `max_tokens` below ~200 will break thinking/reasoning models (`deepseek-v3.2`, \
+`kimi-k2-thinking`, `glm-5`). These models spend tokens on internal chain-of-thought \
+*before* producing visible output. At low budgets (e.g. 50), all tokens are consumed by \
+reasoning and the response comes back empty. The server detects this ("reasoning-token \
+exhaustion") and retries once with `num_predict` bumped to ~306, but this is a fallback, \
+not a fix. **Safe minimum: 200–300 tokens for any call involving thinking models.**
+
+### Consensus and swarm scope
+
+`consensus` defaults to **all registered models** — 13 cloud models plus CLI agents. This \
+means a single `consensus` call can produce 17 individual responses plus a judge synthesis. \
+If context budget matters, always pass an explicit `models` list to scope it down. The same \
+applies to `swarm` when called with `count=13`.
+
+### CLI agent availability
+
+CLI agents (`claude:cli`, `codex:cli`, `gemini:cli`, `kimi:cli`) require their respective \
+binaries on `$PATH`. If a binary is missing, the call fails with `No such file or directory`. \
+If the agent times out or runs out of memory, it exits with code `-9`. These failures are \
+reported per-model in results but do not block other models in a swarm. **Check availability \
+with `list_models` before relying on CLI agents in pipelines.**
+
+### Context intake
+
+There is currently no token-counting metadata in responses. You get `elapsed_seconds` per \
+model but not token usage. When orchestrating multi-model calls, be aware that all raw \
+outputs (including `thinking` fields from reasoning models) land in the caller's context. \
+Strategies to control intake:
+- Use `consensus` or `map_reduce` and read only the synthesis, not individual responses.
+- Use `vote` for decisions — returns a tally, not prose.
+- Use `quality_gate` for pass/fail checks — returns a score, not full analysis.
+- Set `max_tokens` to 300–500 instead of the default 4096 when full responses aren't needed.
+- Pass an explicit `models` list (3–5 models) instead of hitting all 13+.
 """
 
 

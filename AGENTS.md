@@ -49,3 +49,17 @@ Use it when diversity of thought matters or when getting it wrong would be expen
 - Thinking models return a `thinking` field — useful for understanding their reasoning
 - Intermediate results are truncated to 200 chars; use `call_model` for full output
 - See [README.md](README.md) for MCP config examples per client (Claude, Codex, Gemini, Kimi)
+
+## Watch Out
+
+- **Token floor for thinking models.** Don't set `max_tokens` below 200. Thinking models
+  (`deepseek-v3.2`, `kimi-k2-thinking`, `glm-5`) burn tokens on internal reasoning before
+  producing output. At ~50 tokens they return empty strings. Safe minimum: 200–300.
+- **`consensus` calls everything.** It defaults to all 13 cloud models + 4 CLI agents (17
+  total). Always pass an explicit `models` list if context budget matters.
+- **CLI agents can fail silently.** `kimi:cli` requires `kimi` on PATH, `codex:cli` requires
+  `codex`, etc. Missing binaries fail with `No such file or directory`; timeouts exit with
+  code -9. These don't block other models in a swarm, but check `list_models` first.
+- **No token counting in responses.** You get `elapsed_seconds` but not token usage. To
+  control context intake: prefer `vote` (tally only), `quality_gate` (score only), or pass
+  `max_tokens: 300–500` instead of the 4096 default.
